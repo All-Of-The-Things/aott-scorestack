@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.6.0",
     "@vercel/blob": "^2.3.3",
     "next": "14.2.35",
     "papaparse": "^5.5.3",
+    "pg": "^8.20.0",
     "react": "^18",
     "react-dom": "^18",
     "zod": "^4.3.6"
@@ -21,14 +23,16 @@
   "devDependencies": {
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "dotenv": "^17.4.0",
+    "dotenv": "^17.4.1",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "prisma": "^7.6.0",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }
