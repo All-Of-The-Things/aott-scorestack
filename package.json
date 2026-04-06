@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@prisma/adapter-neon": "^7.6.0",
+    "@anthropic-ai/sdk": "^0.82.0",
     "@prisma/client": "^7.6.0",
     "@vercel/blob": "^2.3.3",
     "next": "14.2.35",
