@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
+import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma/enums'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
 
@@ -80,11 +81,10 @@ export async function POST(request: NextRequest) {
         const run = await prisma.run.create({
           data: {
             originalFilename: original_filename,
-            status: 'enriching',
+            status: RunStatus.enriching,
             totalContacts: 0,
             enrichedCount: 0,
             failedCount: 0,
-            
           },
         })
         runId = run.id
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
         csvText = await blobRes.text()
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to fetch CSV from blob'
-        await prisma.run.update({ where: { id: runId }, data: { status: 'failed' } })
+        await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
         send({ type: 'error', message })
         controller.close()
         return
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
         rows = parsed.rows
       } catch (err) {
         const message = err instanceof Error ? err.message : 'CSV parse failed'
-        await prisma.run.update({ where: { id: runId }, data: { status: 'failed' } })
+        await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
         send({ type: 'error', message })
         controller.close()
         return
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
             rowIndex: i,
             linkedinUrl: linkedinUrl || `row_${i}`,
             enrichedData: result.profile ?? undefined,
-            enrichmentStatus: result.status,
+            enrichmentStatus: result.status as EnrichmentStatus,
           },
         })
 
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       await prisma.run.update({
         where: { id: runId },
         data: {
-          status: 'scoring',
+          status: RunStatus.scoring,
           enrichedCount,
           failedCount,
         },

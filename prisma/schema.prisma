@@ -12,6 +12,20 @@ datasource db {
   provider = "postgresql"
 }
 
+enum RunStatus {
+  pending
+  enriching
+  scoring
+  complete
+  failed
+}
+
+enum EnrichmentStatus {
+  success
+  failed
+  skipped
+}
+
 model ScoringModel {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name      String
@@ -31,7 +45,7 @@ model Run {
   totalContacts    Int      @map("total_contacts")
   enrichedCount    Int      @map("enriched_count")
   failedCount      Int      @map("failed_count")
-  status           String   @default("pending")
+  status           RunStatus @default(pending)
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
 
@@ -49,7 +63,7 @@ model RunResult {
   rowIndex           Int      @map("row_index")
   linkedinUrl        String   @map("linkedin_url")
   enrichedData       Json?    @map("enriched_data")
-  enrichmentStatus   String   @map("enrichment_status")
+  enrichmentStatus   EnrichmentStatus @map("enrichment_status")
   totalScore         Decimal? @map("total_score")
   criterionScores    Json?    @map("criterion_scores")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
