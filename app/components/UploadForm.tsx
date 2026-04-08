@@ -191,6 +191,17 @@ export default function UploadForm({ onConfirmed }: UploadFormProps) {
                   <span className="text-blue-600 hover:underline">click to browse</span>
                 </p>
                 <p className="mt-1 text-xs text-gray-400">Max 500 KB · .csv files only</p>
+                <p className="mt-2 text-xs text-gray-400">
+                  Not sure about the format?{' '}
+                  <a
+                    href="/example.csv"
+                    download="example.csv"
+                    className="text-blue-500 hover:text-blue-600 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Download an example CSV
+                  </a>
+                </p>
               </div>
             </div>
           )}
@@ -212,7 +223,23 @@ export default function UploadForm({ onConfirmed }: UploadFormProps) {
                 d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
               />
             </svg>
-            <p className="text-sm text-red-600">{error}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-red-600">{error}</p>
+              {error.toLowerCase().includes('csv') && (
+                <p className="text-xs text-red-500 mt-1">
+                  Make sure your CSV follows standard formatting.{' '}
+                  <a
+                    href="/example.csv"
+                    download="example.csv"
+                    className="text-red-600 underline hover:text-red-700"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Download an example CSV
+                  </a>{' '}
+                  to see the expected format.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>

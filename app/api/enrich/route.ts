@@ -106,8 +106,7 @@ export async function POST(request: NextRequest) {
           throw new Error(`Blob fetch failed: ${blob?.statusCode} ${blob?.statusMessage}`)
         }
 
-        const stream = await blob.stream.getReader().read();
-        csvText = new TextDecoder().decode(stream.value)
+        csvText = await new Response(blob.stream).text()
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to fetch CSV from blob'
         await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })

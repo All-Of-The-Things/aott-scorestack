@@ -6,12 +6,28 @@ export interface ParsedCSV {
 }
 
 /**
+ * Sanitize raw CSV text to handle common real-world encoding issues.
+ * - Strips UTF-8 BOM (byte order mark) that Excel/Google Sheets may prepend
+ * - Replaces curly/smart quotes with straight quotes (from copy-pasting from Word/Docs)
+ * - Normalizes line endings to \n (handles \r\n from Windows and bare \r from old Mac)
+ */
+function sanitizeCSV(raw: string): string {
+  return raw
+    .replace(/^\uFEFF/, '')               // Strip BOM
+    .replace(/[\u201C\u201D]/g, '"')      // Curly double quotes -> straight
+    .replace(/[\u2018\u2019]/g, "'")      // Curly single quotes -> straight
+    .replace(/\r\n/g, '\n')              // Windows CRLF -> LF
+    .replace(/\r/g, '\n')               // Old Mac CR -> LF
+}
+
+/**
  * Parse a CSV string into headers and row objects.
  * Uses papaparse with header detection and type inference disabled
  * so all values remain as strings (safe for LinkedIn URLs and mixed data).
  */
 export function parseCSV(csvText: string): ParsedCSV {
-  const result = Papa.parse<Record<string, string>>(csvText, {
+  const cleaned = sanitizeCSV(csvText)
+  const result = Papa.parse<Record<string, string>>(cleaned, {
     header: true,
     skipEmptyLines: true,
     dynamicTyping: false,
@@ -20,7 +36,11 @@ export function parseCSV(csvText: string): ParsedCSV {
   if (result.errors.length > 0) {
     const fatal = result.errors.find((e) => e.type === 'Quotes' || e.type === 'FieldMismatch')
     if (fatal) {
-      throw new Error(`CSV parse error: ${fatal.message} (row ${fatal.row})`)
+      const hint =
+        fatal.type === 'Quotes'
+          ? ' Check for unmatched quotes or multi-line fields that may not be properly quoted.'
+          : ' Ensure all rows have the same number of columns as the header.'
+      throw new Error(`CSV parse error: ${fatal.message} (row ${fatal.row}).${hint}`)
     }
   }
 
