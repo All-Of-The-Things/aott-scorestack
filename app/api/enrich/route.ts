@@ -49,8 +49,9 @@ function sseMessage(data: object): string {
 //   The client should listen with EventSource on a wrapping fetch (EventSource
 //   does not support POST — use a fetch + ReadableStream reader on the client).
 //
-// Rate limiting:
-//   fetchProfile() handles one retry on 429 internally (2s delay).
+// LinkedAPI integration:
+//   fetchProfile() uses the @linkedapi/node SDK (fetchPerson workflow).
+//   The SDK handles auth, retries, and polling internally.
 //   Calls are sequential to respect LinkedAPI rate limits.
 // ---------------------------------------------------------------------------
 

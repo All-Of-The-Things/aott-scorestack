@@ -1,3 +1,5 @@
+import LinkedApi, { LinkedApiError } from '@linkedapi/node'
+
 export interface LinkedInProfile {
   linkedin_url: string
   first_name: string | null
@@ -18,89 +20,93 @@ export interface FetchProfileResult {
   error?: string
 }
 
-const LINKEDAPI_BASE = 'https://api.linkedapi.io/v1'
-const RETRY_DELAY_MS = 2000
+// ---------------------------------------------------------------------------
+// SDK client — singleton, initialised on first use.
+// Requires LINKED_API_TOKEN and IDENTIFICATION_TOKEN env vars.
+// ---------------------------------------------------------------------------
 
-/**
- * Fetch a LinkedIn profile via LinkedAPI by profile URL.
- *
- * Retry policy: on HTTP 429 (rate limit), wait RETRY_DELAY_MS and retry once.
- * Any other non-200 response (or network error) is returned as status: 'failed'.
- *
- * Requires LINKEDAPI_KEY env var.
- */
+let _client: LinkedApi | null = null
+
+function getClient(): LinkedApi {
+  if (_client) return _client
+
+  const linkedApiToken = process.env.LINKED_API_TOKEN
+  const identificationToken = process.env.IDENTIFICATION_TOKEN
+
+  if (!linkedApiToken || !identificationToken) {
+    throw new Error(
+      'LINKED_API_TOKEN and IDENTIFICATION_TOKEN environment variables must be set'
+    )
+  }
+
+  _client = new LinkedApi({ linkedApiToken, identificationToken })
+  return _client
+}
+
+// ---------------------------------------------------------------------------
+// fetchProfile — uses the @linkedapi/node SDK's fetchPerson operation.
+//
+// The SDK uses an async workflow pattern:
+//   1. execute() starts the workflow and returns a workflowId
+//   2. result(workflowId) polls until the workflow completes
+//
+// We request experience data so we can derive richer profile info.
+// ---------------------------------------------------------------------------
+
 export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileResult> {
   if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) {
     return { status: 'skipped', profile: null, error: 'Invalid or missing LinkedIn URL' }
   }
 
-  const apiKey = process.env.LINKEDAPI_KEY
-  if (!apiKey) {
-    throw new Error('LINKEDAPI_KEY environment variable is not set')
-  }
+  try {
+    const client = getClient()
 
-  const attempt = async (): Promise<Response> => {
-    return fetch(`${LINKEDAPI_BASE}/profile`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ url: linkedinUrl }),
+    const workflowId = await client.fetchPerson.execute({
+      personUrl: linkedinUrl,
+      retrieveExperience: true,
     })
-  }
 
-  let res: Response
+    const personResult = await client.fetchPerson.result(workflowId)
 
-  try {
-    res = await attempt()
-
-    // Retry once on rate limit
-    if (res.status === 429) {
-      await sleep(RETRY_DELAY_MS)
-      res = await attempt()
+    if (personResult.errors.length > 0) {
+      const errorMsg = personResult.errors.map((e) => JSON.stringify(e)).join('; ')
+      return { status: 'failed', profile: null, error: `LinkedAPI errors: ${errorMsg}` }
     }
-  } catch (err) {
-    return {
-      status: 'failed',
-      profile: null,
-      error: err instanceof Error ? err.message : 'Network error',
-    }
-  }
 
-  if (!res.ok) {
-    return {
-      status: 'failed',
-      profile: null,
-      error: `LinkedAPI returned ${res.status}: ${res.statusText}`,
+    if (!personResult.data) {
+      return { status: 'failed', profile: null, error: 'No data returned from LinkedAPI' }
     }
-  }
 
-  try {
-    const raw = await res.json()
+    const person = personResult.data
+    const nameParts = (person.name ?? '').split(' ')
+
     const profile: LinkedInProfile = {
       linkedin_url: linkedinUrl,
-      first_name: raw.firstName ?? raw.first_name ?? null,
-      last_name: raw.lastName ?? raw.last_name ?? null,
-      full_name: raw.fullName ?? raw.full_name ?? raw.name ?? null,
-      headline: raw.headline ?? null,
-      current_title: raw.position ?? raw.currentPosition ?? raw.title ?? null,
-      seniority: raw.seniority ?? null,
-      company_name: raw.company ?? raw.currentCompany ?? raw.companyName ?? null,
-      industry: raw.industry ?? null,
-      company_size: raw.companySize ?? raw.company_size ?? null,
-      location: raw.location ?? raw.geo ?? null,
+      first_name: nameParts[0] || null,
+      last_name: nameParts.length > 1 ? nameParts.slice(1).join(' ') : null,
+      full_name: person.name || null,
+      headline: person.headline || null,
+      current_title: person.position || null,
+      seniority: null,
+      company_name: person.companyName || null,
+      industry: null,
+      company_size: null,
+      location: person.location || null,
     }
+
     return { status: 'success', profile }
-  } catch {
+  } catch (err) {
+    if (err instanceof LinkedApiError) {
+      return {
+        status: 'failed',
+        profile: null,
+        error: `LinkedAPI error: ${err.message}`,
+      }
+    }
     return {
       status: 'failed',
       profile: null,
-      error: 'Failed to parse LinkedAPI response',
+      error: err instanceof Error ? err.message : 'Unknown error',
     }
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
