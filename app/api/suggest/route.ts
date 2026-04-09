@@ -79,7 +79,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'AI suggestion failed'
     console.error('[suggest] suggestCriteria failed:', message)
-    console.error('[suggest] full error:', err)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
