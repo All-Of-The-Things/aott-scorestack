@@ -51,6 +51,7 @@ function getClient(): LinkedApi {
 //   2. result(workflowId) polls until the workflow completes
 //
 // We request experience data so we can derive richer profile info.
+// The SDK handles auth, retries, and polling internally.
 // ---------------------------------------------------------------------------
 
 export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileResult> {
