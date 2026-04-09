@@ -19,7 +19,10 @@ export interface EnrichedSample {
  * Requires ANTHROPIC_API_KEY env var.
  */
 export async function suggestCriteria(enrichedSample: EnrichedSample[]): Promise<Criterion[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.ANTHROPIC_API_KEY_APP
+
+  console.log('[suggestCriteria] API Key from environment:', apiKey);
+
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY environment variable is not set')
   }
