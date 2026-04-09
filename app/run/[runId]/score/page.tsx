@@ -1,10 +1,10 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
+import CriteriaBuilder from '@/app/components/CriteriaBuilder'
 
 // ---------------------------------------------------------------------------
 // Scoreable fields returned by LinkedAPI / lib/linkedapi.ts
-// Only these keys are valid scoring criteria fields in Phase 4+
 // ---------------------------------------------------------------------------
 const SCOREABLE_FIELDS: Record<string, string> = {
   current_title: 'Current Title',
@@ -15,14 +15,7 @@ const SCOREABLE_FIELDS: Record<string, string> = {
   location: 'Location',
 }
 
-// ---------------------------------------------------------------------------
-// Derive which scoreable fields are actually present in the enriched sample.
-// Unions top-level keys from each enrichedData JSONB object and filters
-// down to the known scoreable set.
-// ---------------------------------------------------------------------------
-function deriveAvailableFields(
-  enrichedRows: { enrichedData: unknown }[]
-): string[] {
+function deriveAvailableFields(enrichedRows: { enrichedData: unknown }[]): string[] {
   const found = new Set<string>()
   for (const row of enrichedRows) {
     if (row.enrichedData && typeof row.enrichedData === 'object') {
@@ -37,11 +30,9 @@ function deriveAvailableFields(
 // ---------------------------------------------------------------------------
 // ScorePage — async Server Component
 //
-// Redirect target after POST /api/enrich completes. Displays the run
-// summary (filename, enriched/failed counts) and the scoreable fields
-// detected in the enriched data.
-//
-// Phase 4 replaces the placeholder section below with <CriteriaBuilder />.
+// Phase 4 replaces the placeholder div from Phase 3 with <CriteriaBuilder />.
+// The server component derives which fields are available, then passes them
+// to the client component so it can render field selectors without an API call.
 // ---------------------------------------------------------------------------
 
 interface ScorePageProps {
@@ -153,19 +144,8 @@ export default async function ScorePage({ params }: ScorePageProps) {
           )}
         </div>
 
-        {/* Phase 4: Replace this placeholder with <CriteriaBuilder runId={runId} availableFields={availableFields} /> */}
-        <div className="bg-white rounded-2xl shadow-sm border border-dashed border-gray-200 p-8 text-center">
-          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round"
-                d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
-            </svg>
-          </div>
-          <p className="text-sm font-medium text-gray-500">Scoring criteria builder</p>
-          <p className="mt-1 text-xs text-gray-400">
-            Arrives in Phase 4 — define weights, match rules, and let AI suggest criteria.
-          </p>
-        </div>
+        {/* Phase 4: CriteriaBuilder */}
+        <CriteriaBuilder runId={runId} availableFields={availableFields} />
 
       </div>
     </main>
