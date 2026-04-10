@@ -26,6 +26,7 @@ import type { Criterion, MatchType } from '@/app/lib/scoring'
 interface CriteriaBuilderProps {
   runId: string
   availableFields: string[]
+  initialCriteria?: Criterion[]
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -54,9 +55,9 @@ function emptyCriterion(field: string): Criterion {
   }
 }
 
-export default function CriteriaBuilder({ runId, availableFields }: CriteriaBuilderProps) {
+export default function CriteriaBuilder({ runId, availableFields, initialCriteria }: CriteriaBuilderProps) {
   const router = useRouter()
-  const [criteria, setCriteria] = useState<Criterion[]>([])
+  const [criteria, setCriteria] = useState<Criterion[]>(initialCriteria ?? [])
   const [suggesting, setSuggesting] = useState(false)
   const [scoring, setScoring] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
@@ -106,8 +107,8 @@ export default function CriteriaBuilder({ runId, availableFields }: CriteriaBuil
     )
   }
 
-  function updateMatchValues(index: number, raw: string) {
-    // Comma-separated for list/exact; two values for range
+  function parseMatchValues(index: number, raw: string) {
+    // Split comma-separated text into match_values array (called on blur, not on every keystroke)
     const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
     updateCriterion(index, { match_values: parts })
   }
@@ -215,16 +216,49 @@ export default function CriteriaBuilder({ runId, availableFields }: CriteriaBuil
 
               {/* Values */}
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">
-                  {criterion.match_type === 'range' ? 'Min, Max' : 'Values (comma-separated)'}
-                </label>
-                <input
-                  type="text"
-                  value={criterion.match_values.join(', ')}
-                  onChange={(e) => updateMatchValues(i, e.target.value)}
-                  placeholder={criterion.match_type === 'range' ? '50, 500' : 'Director, VP, C-Level'}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                />
+                {criterion.match_type === 'range' ? (
+                  <div className="flex gap-1.5">
+                    <div className="flex-1">
+                      <label className="block text-[10px] text-gray-400 mb-1">Min</label>
+                      <input
+                        type="number"
+                        value={criterion.match_values[0] ?? ''}
+                        onChange={(e) =>
+                          updateCriterion(i, {
+                            match_values: [e.target.value, criterion.match_values[1] ?? ''],
+                          })
+                        }
+                        placeholder="50"
+                        className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[10px] text-gray-400 mb-1">Max</label>
+                      <input
+                        type="number"
+                        value={criterion.match_values[1] ?? ''}
+                        onChange={(e) =>
+                          updateCriterion(i, {
+                            match_values: [criterion.match_values[0] ?? '', e.target.value],
+                          })
+                        }
+                        placeholder="500"
+                        className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label className="block text-[10px] text-gray-400 mb-1">Values (comma-separated)</label>
+                    <input
+                      type="text"
+                      defaultValue={criterion.match_values.join(', ')}
+                      onBlur={(e) => parseMatchValues(i, e.target.value)}
+                      placeholder="Director, VP, C-Level"
+                      className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                    />
+                  </>
+                )}
               </div>
 
               {/* Score if match */}

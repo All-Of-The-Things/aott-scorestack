@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Criterion } from './scoring'
+import { suggestMock } from '@/app/mocks/suggest'
 
 export interface EnrichedSample {
   linkedin_url: string
@@ -19,6 +20,11 @@ export interface EnrichedSample {
  * Requires ANTHROPIC_API_KEY env var.
  */
 export async function suggestCriteria(enrichedSample: EnrichedSample[]): Promise<Criterion[]> {
+  if (process.env.ANTHROPIC_ENABLED === 'false') {
+    console.warn('Anthropic API calls are disabled by ANTHROPIC_ENABLED=false')
+    return suggestMock.criteria as Criterion[];
+  }
+  
   const apiKey = process.env.ANTHROPIC_API_KEY_APP || process.env.ANTHROPIC_API_KEY
 
   if (!apiKey) {

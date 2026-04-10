@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
 import CriteriaBuilder from '@/app/components/CriteriaBuilder'
+import type { Criterion } from '@/app/lib/scoring'
 
 // ---------------------------------------------------------------------------
 // Scoreable fields returned by LinkedAPI / lib/linkedapi.ts
@@ -145,7 +146,11 @@ export default async function ScorePage({ params }: ScorePageProps) {
         </div>
 
         {/* Phase 4: CriteriaBuilder */}
-        <CriteriaBuilder runId={runId} availableFields={availableFields} />
+        <CriteriaBuilder
+          runId={runId}
+          availableFields={availableFields}
+          initialCriteria={(run.aiSuggestedCriteria as Criterion[] | null) ?? []}
+        />
 
       </div>
     </main>
