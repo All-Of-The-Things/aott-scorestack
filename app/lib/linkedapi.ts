@@ -22,7 +22,7 @@ export interface FetchProfileResult {
 
 // ---------------------------------------------------------------------------
 // SDK client — singleton, initialised on first use.
-// Requires LINKED_API_TOKEN and IDENTIFICATION_TOKEN env vars.
+// Requires LINKED_API_TOKEN and LINKED_API_ID_TOKEN env vars.
 // ---------------------------------------------------------------------------
 
 let _client: LinkedApi | null = null
@@ -31,11 +31,11 @@ function getClient(): LinkedApi {
   if (_client) return _client
 
   const linkedApiToken = process.env.LINKED_API_TOKEN
-  const identificationToken = process.env.IDENTIFICATION_TOKEN
+  const identificationToken = process.env.LINKED_API_ID_TOKEN
 
   if (!linkedApiToken || !identificationToken) {
     throw new Error(
-      'LINKED_API_TOKEN and IDENTIFICATION_TOKEN environment variables must be set'
+      'LINKED_API_TOKEN and LINKED_API_ID_TOKEN environment variables must be set'
     )
   }
 
