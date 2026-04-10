@@ -1,4 +1,5 @@
 import LinkedApi, { LinkedApiError } from '@linkedapi/node'
+import { enrichMock } from '../mocks/enrich'
 
 export interface LinkedInProfile {
   linkedin_url: string
@@ -55,6 +56,13 @@ function getClient(): LinkedApi {
 // ---------------------------------------------------------------------------
 
 export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileResult> {
+  if (process.env.LINKED_API_ENABLED !== 'true') {
+    return {
+      status: 'success',
+      profile: enrichMock(),
+    };
+  }
+
   if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) {
     return { status: 'skipped', profile: null, error: 'Invalid or missing LinkedIn URL' }
   }

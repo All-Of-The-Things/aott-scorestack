@@ -20,7 +20,7 @@ export interface EnrichedSample {
  * Requires ANTHROPIC_API_KEY env var.
  */
 export async function suggestCriteria(enrichedSample: EnrichedSample[]): Promise<Criterion[]> {
-  if (process.env.ANTHROPIC_ENABLED === 'false') {
+  if (process.env.ANTHROPIC_ENABLED !== 'true') {
     console.warn('Anthropic API calls are disabled by ANTHROPIC_ENABLED=false')
     return suggestMock.criteria as Criterion[];
   }
