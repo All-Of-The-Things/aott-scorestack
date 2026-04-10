@@ -22,8 +22,9 @@ function sanitizeCSV(raw: string): string {
 
 /**
  * Parse a CSV string into headers and row objects.
- * Uses papaparse with header detection and type inference disabled
- * so all values remain as strings (safe for LinkedIn URLs and mixed data).
+ * Sanitizes the input first to handle real-world encoding quirks, then uses
+ * papaparse with header detection and type inference disabled so all values
+ * remain as strings (safe for LinkedIn URLs and mixed data).
  */
 export function parseCSV(csvText: string): ParsedCSV {
   const cleaned = sanitizeCSV(csvText)
