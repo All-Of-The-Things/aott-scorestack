@@ -42,7 +42,7 @@ function deriveCriteria(
   }
   // Fallback: derive from persisted scoringCriteria
   if (Array.isArray(scoringCriteria) && scoringCriteria.length > 0) {
-    return (scoringCriteria as Criterion[]).map((c) => ({
+    return (scoringCriteria as unknown as Criterion[]).map((c) => ({
       field: c.field,
       weight: c.weight,
     }))
@@ -104,7 +104,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
     linkedinUrl: r.linkedinUrl,
     enrichmentStatus: r.enrichmentStatus as SerializedResult['enrichmentStatus'],
     totalScore: Number(r.totalScore ?? 0),
-    criterionScores: (r.criterionScores as CriterionScore[]) ?? [],
+    criterionScores: (r.criterionScores as unknown as CriterionScore[]) ?? [],
   }))
 
   const enrichRate =
@@ -117,7 +117,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
     : null
 
   const usedCriteria = Array.isArray(scoringCriteria)
-    ? (scoringCriteria as Criterion[])
+    ? (scoringCriteria as unknown as Criterion[])
     : []
 
   return (
@@ -165,7 +165,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
           </div>
 
           {/* Stats row */}
-          <div className="px-6 py-4 grid grid-cols-3 divide-x divide-gray-100">
+          <div className="px-6 py-4 grid grid-cols-4 divide-x divide-gray-100">
             <div className="pr-6">
               <p className="text-xs text-gray-400">Total contacts</p>
               <p className="mt-0.5 text-xl font-bold text-gray-900 tabular-nums">
@@ -179,10 +179,18 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
                 <span className="ml-1 text-xs font-medium text-gray-400">({enrichRate}%)</span>
               </p>
             </div>
-            <div className="pl-6">
+            <div className="px-6">
               <p className="text-xs text-gray-400">Failed</p>
               <p className={`mt-0.5 text-xl font-bold tabular-nums ${run.failedCount > 0 ? 'text-red-500' : 'text-gray-300'}`}>
                 {run.failedCount}
+              </p>
+            </div>
+            <div className="pl-6">
+              <p className="text-xs text-gray-400">Avg enrichment</p>
+              <p className="mt-0.5 text-xl font-bold text-gray-700 tabular-nums">
+                {run.avgEnrichmentMs
+                  ? `${(run.avgEnrichmentMs / 1000).toFixed(1)}s`
+                  : <span className="text-gray-300">—</span>}
               </p>
             </div>
           </div>

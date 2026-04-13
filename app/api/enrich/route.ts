@@ -93,7 +93,6 @@ export async function POST(request: NextRequest) {
         })
         runId = run.id
       } catch (err) {
-        console.error('Failed to create run record:', err instanceof Error ? err.message : err)
         send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : error })
         controller.close()
         return
@@ -138,13 +137,22 @@ export async function POST(request: NextRequest) {
 
       let enrichedCount = 0
       let failedCount = 0
+      let cumulativeMs = 0
+      const enrichmentStart = Date.now()
 
       // Enrich each contact sequentially
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i]!
         const linkedinUrl = (row[linkedin_column] ?? '').trim()
 
+        const contactStart = Date.now()
         const result = await fetchProfile(linkedinUrl)
+        const contactMs = Date.now() - contactStart
+        cumulativeMs += contactMs
+
+        const completed = i + 1
+        const avgMsPerContact = Math.round(cumulativeMs / completed)
+        const estimatedRemainingMs = avgMsPerContact * (rows.length - completed)
 
         const contactName =
           (result.profile?.full_name ??
@@ -171,12 +179,19 @@ export async function POST(request: NextRequest) {
 
         send({
           type: 'progress',
-          current: i + 1,
+          current: completed,
           total: rows.length,
           contact_name: contactName,
           enrichment_status: result.status,
+          avg_ms_per_contact: avgMsPerContact,
+          estimated_remaining_ms: estimatedRemainingMs,
         })
       }
+
+      const totalEnrichmentMs = Date.now() - enrichmentStart
+      const avgEnrichmentMs = rows.length > 0
+        ? Math.round(cumulativeMs / rows.length)
+        : 0
 
       // Finalize run
       await prisma.run.update({
@@ -185,6 +200,8 @@ export async function POST(request: NextRequest) {
           status: RunStatus.scoring,
           enrichedCount,
           failedCount,
+          avgEnrichmentMs,
+          totalEnrichmentMs,
         },
       })
 

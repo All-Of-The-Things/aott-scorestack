@@ -26,6 +26,19 @@ interface EnrichmentProgressProps {
 // Max contacts shown in the rolling log
 const LOG_MAX = 5
 
+// Format milliseconds into a human-readable estimate string.
+// Returns null if fewer than 3 contacts have been processed (too early to be reliable).
+function formatEta(remainingMs: number, completed: number): string | null {
+  if (completed < 3) return null
+  if (remainingMs <= 0) return null
+  const totalSec = Math.ceil(remainingMs / 1000)
+  if (totalSec < 5) return null
+  const mins = Math.floor(totalSec / 60)
+  const secs = totalSec % 60
+  if (mins === 0) return `~${secs}s remaining`
+  return secs === 0 ? `~${mins}m remaining` : `~${mins}m ${secs}s remaining`
+}
+
 // ---------------------------------------------------------------------------
 // EnrichmentProgress
 //
@@ -55,6 +68,8 @@ export default function EnrichmentProgress({
   const [failedCount, setFailedCount] = useState(0)
   const [log, setLog] = useState<ContactLog[]>([])
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [estimatedRemainingMs, setEstimatedRemainingMs] = useState<number>(0)
+  const [avgMsPerContact, setAvgMsPerContact] = useState<number>(0)
 
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -132,6 +147,8 @@ export default function EnrichmentProgress({
               setCurrent(cur)
               setTotal(tot)
               setCurrentContact(name)
+              setEstimatedRemainingMs((event.estimated_remaining_ms as number) ?? 0)
+              setAvgMsPerContact((event.avg_ms_per_contact as number) ?? 0)
 
               if (status === 'success') setSuccessCount((n) => n + 1)
               else setFailedCount((n) => n + 1)
@@ -255,7 +272,12 @@ export default function EnrichmentProgress({
           />
         </div>
 
-        <p className="mt-1.5 text-right text-xs text-gray-400 tabular-nums">{percent}%</p>
+        <div className="mt-1.5 flex items-center justify-between">
+          <span className="text-xs text-gray-400">
+            {formatEta(estimatedRemainingMs, current) ?? ''}
+          </span>
+          <span className="text-xs text-gray-400 tabular-nums">{percent}%</span>
+        </div>
       </div>
 
       {/* Counters */}
@@ -271,6 +293,12 @@ export default function EnrichmentProgress({
               <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
               <span className="tabular-nums font-medium">{failedCount}</span>
               <span>failed</span>
+            </div>
+          )}
+          {avgMsPerContact > 0 && (
+            <div className="ml-auto flex items-center gap-1 text-xs text-gray-400">
+              <span className="tabular-nums">{(avgMsPerContact / 1000).toFixed(1)}s</span>
+              <span>avg/contact</span>
             </div>
           )}
         </div>
