@@ -1,6 +1,5 @@
 {
   "extends": ["next/core-web-vitals", "next/typescript"],
-  "files": ["**/*.ts", "**/*.tsx"],
   "ignorePatterns": ["node_modules/", ".next/", "prisma/generated/"],
   "rules": {
     "@typescript-eslint/no-unused-vars": "warn",
