@@ -19,13 +19,15 @@ import type { Criterion, MatchType } from '@/app/lib/scoring'
 //   availableFields — array of field keys present in enriched data, e.g. ['seniority', 'industry']
 //                     derived by the parent server component from runResult rows
 //
-// The component starts with an empty criteria list. Clicking "Suggest criteria
-// for me" replaces the list with AI suggestions (user can still edit them).
+// If `initialCriteria` is provided (e.g. from `runs.ai_suggested_criteria`),
+// the form pre-populates on mount so the user sees them immediately without
+// clicking "Suggest criteria for me" again. The user can still edit or replace.
 // ---------------------------------------------------------------------------
 
 interface CriteriaBuilderProps {
   runId: string
   availableFields: string[]
+  initialCriteria?: Criterion[]
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -54,9 +56,9 @@ function emptyCriterion(field: string): Criterion {
   }
 }
 
-export default function CriteriaBuilder({ runId, availableFields }: CriteriaBuilderProps) {
+export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [] }: CriteriaBuilderProps) {
   const router = useRouter()
-  const [criteria, setCriteria] = useState<Criterion[]>([])
+  const [criteria, setCriteria] = useState<Criterion[]>(initialCriteria)
   const [suggesting, setSuggesting] = useState(false)
   const [scoring, setScoring] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
