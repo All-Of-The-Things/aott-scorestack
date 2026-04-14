@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import type { Criterion } from '@/lib/scoring'
+import type { Criterion } from '@/app/lib/scoring'
 
 interface SaveModelModalProps {
   criteria: Criterion[]
