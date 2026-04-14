@@ -149,7 +149,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <CriteriaBuilder
           runId={runId}
           availableFields={availableFields}
-          initialCriteria={(run.aiSuggestedCriteria as Criterion[] | null) ?? []}
+          initialCriteria={(run.aiSuggestedCriteria as unknown as Criterion[] | null) ?? []}
         />
 
       </div>

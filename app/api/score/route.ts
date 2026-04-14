@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
-import { EnrichmentStatus, RunStatus } from '@/app/generated/prisma/enums'
+import { EnrichmentStatus, RunStatus } from '@/app/generated/prisma'
 import { computeScores, type Criterion } from '@/app/lib/scoring'
 
 // ---------------------------------------------------------------------------
