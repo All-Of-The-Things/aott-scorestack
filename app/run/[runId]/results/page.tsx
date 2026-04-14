@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
-import { RunStatus } from '@/app/generated/prisma/enums'
+import { RunStatus } from '@/app/generated/prisma'
 import ResultsTable, { type SerializedResult, type CriterionMeta } from '@/app/components/ResultsTable'
 import type { CriterionScore, Criterion } from '@/app/lib/scoring'
 

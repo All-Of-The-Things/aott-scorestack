@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
-import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma/enums'
+import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
 import { InputJsonObject } from '@prisma/client/runtime/client'
@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
         })
         runId = run.id
       } catch (err) {
+        console.error('Error creating run record:', err)
         send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : error })
         controller.close()
         return
