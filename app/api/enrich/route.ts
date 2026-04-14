@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
         })
         runId = run.id
       } catch (err) {
+        console.error('Error creating run record:', err)
         send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : error })
         controller.close()
         return
