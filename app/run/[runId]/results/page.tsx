@@ -71,7 +71,10 @@ interface ResultsPageProps {
 export default async function ResultsPage({ params }: ResultsPageProps) {
   const { runId } = params
 
-  const run = await prisma.run.findUnique({ where: { id: runId } })
+  const run = await prisma.run.findUnique({
+    where: { id: runId },
+    include: { model: { select: { name: true } } },
+  })
   if (!run) notFound()
 
   // Guard: scoring may still be in progress if the user navigates here early
@@ -153,7 +156,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
                   Complete
                 </span>
                 {/* Phase 6: Save as model — wired up */}
-                <SaveModelButton criteria={usedCriteria} />
+                <SaveModelButton criteria={usedCriteria} savedModelName={run.model?.name ?? null} />
               </div>
             </div>
           </div>

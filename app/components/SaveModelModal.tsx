@@ -6,7 +6,7 @@ import type { Criterion } from '@/app/lib/scoring'
 interface SaveModelModalProps {
   criteria: Criterion[]
   onClose: () => void
-  onSaved: (modelId: string) => void
+  onSaved: (modelId: string, modelName: string) => void
 }
 
 export default function SaveModelModal({ criteria, onClose, onSaved }: SaveModelModalProps) {
@@ -35,7 +35,7 @@ export default function SaveModelModal({ criteria, onClose, onSaved }: SaveModel
       }
 
       const { model_id } = await res.json()
-      onSaved(model_id)
+      onSaved(model_id, name.trim())
     } catch {
       setError('Network error — could not save model')
       setSaving(false)
