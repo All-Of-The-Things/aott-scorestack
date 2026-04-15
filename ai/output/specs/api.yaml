@@ -1,0 +1,539 @@
+openapi: 3.1.0
+info:
+  title: Scorestack Growth API
+  version: 2.0.0
+  description: |
+    Full API specification for Scorestack growth features.
+    All endpoints except /api/auth/* and /api/health require an active NextAuth session.
+    Paid-tier endpoints return 402 with { error: 'plan_required', requiredPlan } if the org plan is insufficient.
+
+servers:
+  - url: https://app.scorestack.io
+
+tags:
+  - name: Auth
+  - name: Enrichment
+  - name: Export
+  - name: Scoring
+  - name: Messages
+  - name: Delivery
+  - name: Billing
+  - name: Org
+  - name: Usage
+
+paths:
+
+  # ─── AUTH (NextAuth.js catch-all) ─────────────────────────────────────────
+
+  /api/auth/{...nextauth}:
+    get:
+      tags: [Auth]
+      summary: NextAuth session/sign-in/sign-out pages and callbacks
+      description: Handled entirely by NextAuth.js. Includes magic-link email sign-in flow.
+    post:
+      tags: [Auth]
+      summary: NextAuth POST handlers (sign-in submission, CSRF token)
+
+  # ─── ENRICHMENT ───────────────────────────────────────────────────────────
+
+  /api/enrich:
+    post:
+      tags: [Enrichment]
+      summary: Enrich contacts from uploaded CSV (SSE stream)
+      description: |
+        Checks quota before starting. If quota exceeded, returns 402.
+        If Run.notifyEmail is provided, enrichment continues async and sends email on completion.
+        SSE events: { type: 'progress', contact, status } and { type: 'complete', runId }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [blob_url, linkedin_column, original_filename]
+              properties:
+                blob_url:        { type: string }
+                linkedin_column: { type: string }
+                original_filename: { type: string }
+                notify_email:    { type: string, format: email, description: "Optional. If provided, user can navigate away and receive email on completion." }
+      responses:
+        '200':
+          description: SSE stream (text/event-stream)
+        '402':
+          description: Quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaError'
+
+  /api/runs/{runId}/status:
+    get:
+      tags: [Enrichment]
+      summary: Poll run status (for deferred enrichment)
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:         { type: string, enum: [pending, enriching, scoring, complete, failed] }
+                  enrichedCount:  { type: integer }
+                  failedCount:    { type: integer }
+                  totalContacts:  { type: integer }
+                  completedAt:    { type: string, format: date-time, nullable: true }
+
+  # ─── EXPORT ───────────────────────────────────────────────────────────────
+
+  /api/runs/{runId}/export:
+    get:
+      tags: [Export]
+      summary: Download scored results as CSV
+      description: |
+        Free tier: returns top 10 rows with a watermark column.
+        Starter+: returns all rows with full enriched fields, scores, and ranks.
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: topN
+          in: query
+          schema: { type: integer, description: "Optional. Limit to top N by score." }
+      responses:
+        '200':
+          description: CSV file download
+          content:
+            text/csv:
+              schema: { type: string }
+          headers:
+            Content-Disposition: { schema: { type: string }, example: 'attachment; filename="scorestack-results-2024-01-15.csv"' }
+
+  # ─── SCORING (existing, documented for completeness) ─────────────────────
+
+  /api/score:
+    post:
+      tags: [Scoring]
+      summary: Apply scoring criteria to a run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [run_id]
+              properties:
+                run_id:    { type: string }
+                criteria:  { type: array, items: { $ref: '#/components/schemas/Criterion' } }
+                model_id:  { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id:         { type: string }
+                  total_contacts: { type: integer }
+                  results:        { type: array, items: { $ref: '#/components/schemas/RunResultSummary' } }
+
+  # ─── AI MESSAGES ──────────────────────────────────────────────────────────
+
+  /api/messages/generate:
+    post:
+      tags: [Messages]
+      summary: Generate personalised AI messages for run contacts
+      description: |
+        Requires Starter plan or above.
+        Batches Anthropic API calls with prompt caching per template.
+        Returns generated messages; also persists them as GeneratedMessage rows.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [run_id, template_id]
+              properties:
+                run_id:      { type: string }
+                template_id: { type: string }
+                top_n:       { type: integer, description: "Generate only for top N contacts by score. Defaults to all." }
+                contact_ids: { type: array, items: { type: string }, description: "Generate for specific RunResult IDs only." }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated: { type: integer, description: "Count of messages generated" }
+                  messages:  { type: array, items: { $ref: '#/components/schemas/GeneratedMessage' } }
+        '402':
+          $ref: '#/components/responses/PlanRequired'
+
+  /api/messages/templates:
+    get:
+      tags: [Messages]
+      summary: List message templates for the org
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates: { type: array, items: { $ref: '#/components/schemas/MessageTemplate' } }
+    post:
+      tags: [Messages]
+      summary: Create a new message template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageTemplateInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageTemplate'
+
+  /api/messages/templates/{templateId}:
+    put:
+      tags: [Messages]
+      summary: Update an existing message template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageTemplateInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageTemplate'
+    delete:
+      tags: [Messages]
+      summary: Delete a message template
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Deleted }
+
+  # ─── DELIVERY ─────────────────────────────────────────────────────────────
+
+  /api/delivery/jobs:
+    get:
+      tags: [Delivery]
+      summary: List delivery jobs for the org
+      description: Requires Pro plan or above.
+      parameters:
+        - name: runId
+          in: query
+          schema: { type: string, description: "Filter by run" }
+        - name: status
+          in: query
+          schema: { type: string, enum: [scheduled, running, complete, failed, cancelled] }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: array, items: { $ref: '#/components/schemas/DeliveryJob' } }
+        '402':
+          $ref: '#/components/responses/PlanRequired'
+    post:
+      tags: [Delivery]
+      summary: Create a delivery job
+      description: Requires Pro plan or above.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryJobInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryJob'
+        '402':
+          $ref: '#/components/responses/PlanRequired'
+
+  /api/delivery/jobs/{jobId}:
+    get:
+      tags: [Delivery]
+      summary: Get delivery job status and counts
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryJob'
+    delete:
+      tags: [Delivery]
+      summary: Cancel a scheduled delivery job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cancelled: { type: boolean }
+
+  # ─── BILLING ──────────────────────────────────────────────────────────────
+
+  /api/billing/checkout:
+    post:
+      tags: [Billing]
+      summary: Create a Lemon Squeezy checkout URL for plan upgrade
+      description: Lemon Squeezy acts as Merchant of Record — no US bank account required. Supports Uruguay-based sellers with payouts via PayPal/Wise/bank transfer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan]
+              properties:
+                plan: { type: string, enum: [starter, pro] }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url: { type: string, format: uri, description: "Lemon Squeezy hosted checkout page URL" }
+
+  /api/billing/portal:
+    post:
+      tags: [Billing]
+      summary: Create a Lemon Squeezy Customer Portal URL
+      description: User manages payment method, plan changes, and cancellations on Lemon Squeezy's hosted portal.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portal_url: { type: string, format: uri }
+
+  /api/webhooks/lemonsqueezy:
+    post:
+      tags: [Billing]
+      summary: Lemon Squeezy webhook receiver
+      description: Validates X-Signature header (HMAC-SHA256). Handles subscription_created, subscription_updated, subscription_cancelled, subscription_payment_failed.
+      responses:
+        '200': { description: Acknowledged }
+
+  # ─── ORG / TEAM ───────────────────────────────────────────────────────────
+
+  /api/org/members:
+    get:
+      tags: [Org]
+      summary: List org members
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:    { type: string }
+                        name:  { type: string }
+                        email: { type: string }
+                        role:  { type: string, enum: [admin, member] }
+
+  /api/org/invite:
+    post:
+      tags: [Org]
+      summary: Invite a teammate by email
+      description: Requires Pro plan. Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+                role:  { type: string, enum: [admin, member], default: member }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  invited: { type: boolean }
+        '402':
+          $ref: '#/components/responses/PlanRequired'
+
+  /api/org/members/{userId}:
+    delete:
+      tags: [Org]
+      summary: Remove a member from the org. Admin only.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Removed }
+
+  # ─── USAGE ────────────────────────────────────────────────────────────────
+
+  /api/usage:
+    get:
+      tags: [Usage]
+      summary: Get current quota usage for the org
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan:              { type: string, enum: [free, starter, pro, enterprise] }
+                  contactsUsed:      { type: integer }
+                  contactsLimit:     { type: integer, description: "-1 means unlimited" }
+                  resetDate:         { type: string, format: date-time, nullable: true }
+                  modelsUsed:        { type: integer }
+                  modelsLimit:       { type: integer }
+                  seats:             { type: integer }
+                  seatsLimit:        { type: integer }
+
+components:
+
+  schemas:
+
+    Criterion:
+      type: object
+      required: [field, match_type, match_values, score_if_match, score_if_no_match, weight]
+      properties:
+        field:             { type: string }
+        match_type:        { type: string, enum: [exact, list, range] }
+        match_values:      { type: array, items: { type: string } }
+        score_if_match:    { type: number, minimum: 0, maximum: 100 }
+        score_if_no_match: { type: number, minimum: 0, maximum: 100 }
+        weight:            { type: number, minimum: 0, maximum: 100 }
+
+    RunResultSummary:
+      type: object
+      properties:
+        id:              { type: string }
+        linkedinUrl:     { type: string }
+        rank:            { type: integer }
+        totalScore:      { type: number }
+        criterionScores: { type: array }
+
+    MessageTemplate:
+      type: object
+      properties:
+        id:           { type: string }
+        name:         { type: string }
+        tone:         { type: string }
+        goal:         { type: string }
+        systemPrompt: { type: string }
+        createdAt:    { type: string, format: date-time }
+
+    MessageTemplateInput:
+      type: object
+      required: [name, tone, goal, systemPrompt]
+      properties:
+        name:         { type: string }
+        tone:         { type: string }
+        goal:         { type: string }
+        systemPrompt: { type: string }
+
+    GeneratedMessage:
+      type: object
+      properties:
+        id:             { type: string }
+        runResultId:    { type: string }
+        templateId:     { type: string }
+        body:           { type: string, description: "Plain text only — LinkedIn does not support HTML" }
+        editedBody:     { type: string, nullable: true }
+        deliveryStatus: { type: string, enum: [pending, sent, failed] }
+        generatedAt:    { type: string, format: date-time }
+        sentAt:         { type: string, format: date-time, nullable: true }
+
+    DeliveryJobInput:
+      type: object
+      required: [run_id]
+      properties:
+        run_id:       { type: string }
+        scheduled_at: { type: string, format: date-time, description: "null = send immediately. LinkedAPI credentials from server env — no user input needed." }
+        contact_ids:  { type: array, items: { type: string }, description: "Subset of RunResult IDs to include. Defaults to all contacts with generated messages." }
+
+    DeliveryJob:
+      type: object
+      properties:
+        id:           { type: string }
+        runId:        { type: string }
+        channel:      { type: string, enum: [email, linkedin] }
+        status:       { type: string, enum: [scheduled, running, complete, failed, cancelled] }
+        scheduledAt:  { type: string, format: date-time, nullable: true }
+        completedAt:  { type: string, format: date-time, nullable: true }
+        sentCount:    { type: integer }
+        failedCount:  { type: integer }
+        createdAt:    { type: string, format: date-time }
+
+    QuotaError:
+      type: object
+      properties:
+        error:       { type: string, enum: [quota_exceeded] }
+        used:        { type: integer }
+        limit:       { type: integer }
+        plan:        { type: string }
+        upgrade_url: { type: string }
+
+  responses:
+    PlanRequired:
+      description: Feature requires a higher plan
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:         { type: string, enum: [plan_required] }
+              requiredPlan:  { type: string, enum: [starter, pro, enterprise] }
+              upgrade_url:   { type: string }

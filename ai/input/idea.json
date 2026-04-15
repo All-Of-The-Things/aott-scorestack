@@ -1,0 +1,11 @@
+{
+  "product_name": "ScoreStack",
+  "category": "LinkedIn-enriched contact scoring tool",
+  "target_user": "Sales, RevOps, and recruiting teams that maintain contact lists and need to prioritize outreach based on professional fit — without doing manual LinkedIn research per contact.",
+  "core_problem": "Teams have lists of contacts but no structured way to evaluate or rank them against real professional data. Manual LinkedIn research is slow and inconsistent. Spreadsheet scoring ignores what's actually on a contact's profile.",
+  "solution_summary": "Upload a CSV of contacts that includes a LinkedIn URL column. ScoreStack fetches each contact's LinkedIn profile data, then scores every contact based on user-defined criteria and weights (e.g. seniority: 40%, industry: 30%, company size: 30%). Returns a ranked list ready for outreach.",
+  "economic_edge": "Replaces hours of manual LinkedIn research per list. Eliminates inconsistent scoring across team members. Cheaper than enrichment services that charge per record without a scoring layer.",
+  "pricing_model": "Per-seat SaaS. Free tier: 1 scoring model, up to 50 contacts/run. Paid tiers unlock higher contact volume, multiple saved models, and team sharing.",
+  "mvp_scope": "Upload a CSV with a LinkedIn URL column. ScoreStack detects the URL column, fetches LinkedIn profile data for each contact via the enrichment layer, and presents available profile fields as scoreable criteria. User assigns weights to selected criteria. ScoreStack scores and ranks all contacts. User can save the model and re-run it on a new list.",
+  "expansion_path": "Add more scoreable LinkedIn fields (posts, engagement signals), support team sharing of scoring models, add CRM export (HubSpot, Salesforce), then layer in buying-intent signals from third-party sources."
+}

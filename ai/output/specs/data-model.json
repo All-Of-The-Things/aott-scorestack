@@ -1,0 +1,208 @@
+{
+  "version": "2.0.0",
+  "description": "Scorestack extended data model — growth tier additions on top of MVP schema",
+
+  "new_models": {
+    "User": {
+      "description": "NextAuth-compatible user record. Created automatically on first sign-in via Prisma adapter.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "name": { "type": "String", "nullable": true },
+        "email": { "type": "String", "unique": true },
+        "emailVerified": { "type": "DateTime", "nullable": true },
+        "image": { "type": "String", "nullable": true },
+        "role": { "type": "UserRole", "default": "member" },
+        "orgId": { "type": "String", "nullable": true, "foreign_key": "Organization.id" },
+        "createdAt": { "type": "DateTime", "default": "now()" }
+      },
+      "relations": {
+        "org": "Organization (optional)",
+        "accounts": "Account[]",
+        "sessions": "Session[]",
+        "runs": "Run[]"
+      },
+      "notes": "orgId is nullable until the post-sign-in callback bootstraps an Organization."
+    },
+
+    "Account": {
+      "description": "NextAuth OAuth account linkage table (required by @auth/prisma-adapter).",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "userId": { "type": "String", "foreign_key": "User.id", "on_delete": "Cascade" },
+        "type": { "type": "String" },
+        "provider": { "type": "String" },
+        "providerAccountId": { "type": "String" },
+        "refresh_token": { "type": "String", "nullable": true },
+        "access_token": { "type": "String", "nullable": true },
+        "expires_at": { "type": "Int", "nullable": true },
+        "token_type": { "type": "String", "nullable": true },
+        "scope": { "type": "String", "nullable": true },
+        "id_token": { "type": "String", "nullable": true },
+        "session_state": { "type": "String", "nullable": true }
+      },
+      "unique_constraints": [["provider", "providerAccountId"]]
+    },
+
+    "Session": {
+      "description": "NextAuth database session (server-authoritative, not JWT).",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "sessionToken": { "type": "String", "unique": true },
+        "userId": { "type": "String", "foreign_key": "User.id", "on_delete": "Cascade" },
+        "expires": { "type": "DateTime" }
+      }
+    },
+
+    "VerificationToken": {
+      "description": "NextAuth magic-link / email verification token.",
+      "fields": {
+        "identifier": { "type": "String" },
+        "token": { "type": "String", "unique": true },
+        "expires": { "type": "DateTime" }
+      },
+      "unique_constraints": [["identifier", "token"]]
+    },
+
+    "Organization": {
+      "description": "Workspace / billing unit. One org per user on Free/Starter/Pro; Enterprise may have multiple users.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "name": { "type": "String" },
+        "plan": { "type": "Plan", "default": "free" },
+        "contactsUsedThisMonth": { "type": "Int", "default": 0 },
+        "resetDate": { "type": "DateTime", "nullable": true, "description": "Start of current billing period. Set on first enrichment." },
+        "lsCustomerId": { "type": "String", "nullable": true, "unique": true, "description": "Lemon Squeezy customer ID" },
+        "createdAt": { "type": "DateTime", "default": "now()" }
+      },
+      "relations": {
+        "users": "User[]",
+        "subscription": "Subscription (optional)",
+        "runs": "Run[]",
+        "scoringModels": "ScoringModel[]",
+        "messageTemplates": "MessageTemplate[]",
+        "deliveryJobs": "DeliveryJob[]",
+        "usageLogs": "UsageLog[]"
+      }
+    },
+
+    "Subscription": {
+      "description": "Lemon Squeezy subscription record for the org. One active subscription at a time.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "orgId": { "type": "String", "unique": true, "foreign_key": "Organization.id", "on_delete": "Cascade" },
+        "lsSubscriptionId": { "type": "String", "unique": true, "description": "Lemon Squeezy subscription ID" },
+        "lsCustomerId": { "type": "String", "description": "Lemon Squeezy customer ID" },
+        "plan": { "type": "Plan" },
+        "status": { "type": "SubscriptionStatus" },
+        "currentPeriodEnd": { "type": "DateTime" },
+        "cancelAtPeriodEnd": { "type": "Boolean", "default": false },
+        "createdAt": { "type": "DateTime", "default": "now()" },
+        "updatedAt": { "type": "DateTime", "auto_update": true }
+      }
+    },
+
+    "UsageLog": {
+      "description": "Append-only log of contacts consumed per enrichment run. Summed to enforce quota.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "orgId": { "type": "String", "foreign_key": "Organization.id", "on_delete": "Cascade" },
+        "runId": { "type": "String", "foreign_key": "Run.id", "on_delete": "Cascade" },
+        "contactsConsumed": { "type": "Int" },
+        "createdAt": { "type": "DateTime", "default": "now()" }
+      }
+    },
+
+    "EnrichmentNotification": {
+      "description": "Tracks whether a deferred-enrichment completion email has been sent for a run.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "runId": { "type": "String", "unique": true, "foreign_key": "Run.id", "on_delete": "Cascade" },
+        "email": { "type": "String", "description": "Email to notify. May differ from signed-in user if unauthenticated." },
+        "sentAt": { "type": "DateTime", "nullable": true }
+      }
+    },
+
+    "MessageTemplate": {
+      "description": "Reusable AI message template defining tone, goal, and system prompt.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "orgId": { "type": "String", "foreign_key": "Organization.id", "on_delete": "Cascade" },
+        "name": { "type": "String", "description": "Human name, e.g. 'Cold outreach — friendly'" },
+        "tone": { "type": "String", "description": "e.g. professional, friendly, direct, casual" },
+        "goal": { "type": "String", "description": "e.g. book a call, share a resource, follow up" },
+        "systemPrompt": { "type": "String", "description": "Full system prompt sent to Claude. Includes tone/goal instructions." },
+        "createdAt": { "type": "DateTime", "default": "now()" },
+        "updatedAt": { "type": "DateTime", "auto_update": true }
+      },
+      "relations": {
+        "generatedMessages": "GeneratedMessage[]"
+      }
+    },
+
+    "GeneratedMessage": {
+      "description": "AI-generated personalised LinkedIn message for one contact in a run.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "runResultId": { "type": "String", "foreign_key": "RunResult.id", "on_delete": "Cascade" },
+        "templateId": { "type": "String", "foreign_key": "MessageTemplate.id" },
+        "body": { "type": "String", "description": "Full message body (plain text — LinkedIn messages do not support HTML)" },
+        "editedBody": { "type": "String", "nullable": true, "description": "User-edited version, if modified before sending" },
+        "generatedAt": { "type": "DateTime", "default": "now()" },
+        "sentAt": { "type": "DateTime", "nullable": true },
+        "deliveryStatus": { "type": "DeliveryStatus", "default": "pending" },
+        "deliveryJobId": { "type": "String", "nullable": true, "foreign_key": "DeliveryJob.id" }
+      }
+    },
+
+    "DeliveryJob": {
+      "description": "A batch LinkedIn message delivery campaign for a run's generated messages. Uses LinkedAPI messaging workflow — no additional credentials required beyond existing enrichment keys.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "orgId": { "type": "String", "foreign_key": "Organization.id", "on_delete": "Cascade" },
+        "runId": { "type": "String", "foreign_key": "Run.id" },
+        "channel": { "type": "DeliveryChannel", "default": "linkedin", "description": "linkedin only in v1; field retained for future email channel" },
+        "status": { "type": "JobStatus", "default": "scheduled" },
+        "scheduledAt": { "type": "DateTime", "nullable": true, "description": "null = send immediately on job creation" },
+        "startedAt": { "type": "DateTime", "nullable": true },
+        "completedAt": { "type": "DateTime", "nullable": true },
+        "sentCount": { "type": "Int", "default": 0 },
+        "failedCount": { "type": "Int", "default": 0 },
+        "createdAt": { "type": "DateTime", "default": "now()" }
+      },
+      "relations": {
+        "messages": "GeneratedMessage[]"
+      }
+    }
+  },
+
+  "modified_models": {
+    "Run": {
+      "additions": {
+        "userId": { "type": "String", "nullable": true, "foreign_key": "User.id", "description": "Null for unauthenticated runs (free tier before sign-in)" },
+        "orgId": { "type": "String", "nullable": true, "foreign_key": "Organization.id", "description": "Null for unauthenticated runs" },
+        "notifyEmail": { "type": "String", "nullable": true, "description": "Set when user opts into deferred enrichment notification" }
+      }
+    },
+    "ScoringModel": {
+      "additions": {
+        "orgId": { "type": "String", "nullable": true, "foreign_key": "Organization.id", "description": "Null for models created before auth was added" }
+      }
+    }
+  },
+
+  "enums": {
+    "Plan": ["free", "starter", "pro", "enterprise"],
+    "UserRole": ["admin", "member"],
+    "SubscriptionStatus": ["active", "trialing", "past_due", "canceled", "unpaid"],
+    "DeliveryStatus": ["pending", "sent", "opened", "bounced", "failed"],
+    "DeliveryChannel": ["email", "linkedin"],
+    "JobStatus": ["scheduled", "running", "complete", "failed", "cancelled"]
+  },
+
+  "plan_limits": {
+    "free":       { "contactsPerRun": 50,   "modelsLimit": 1,  "seats": 1 },
+    "starter":    { "contactsPerRun": 500,  "modelsLimit": 5,  "seats": 1 },
+    "pro":        { "contactsPerRun": 2000, "modelsLimit": -1, "seats": 3 },
+    "enterprise": { "contactsPerRun": -1,   "modelsLimit": -1, "seats": -1 }
+  }
+}
