@@ -138,9 +138,10 @@ export async function POST(request: NextRequest) {
     data: {
       status: RunStatus.complete,
       completedAt: new Date(),
-      // Persist the criteria used so the results page can display them
-      ...(body.criteria ? { scoringCriteria: criteria as object } : {}),
-      ...(model_id ? { modelId: model_id } : {}),
+      // Always persist the criteria used so the results page can display them
+      scoringCriteria: criteria as object,
+      // Clear modelId when re-scoring with custom criteria (not a saved model)
+      modelId: model_id ?? null,
     },
   })
 

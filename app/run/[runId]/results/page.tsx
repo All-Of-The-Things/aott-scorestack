@@ -4,6 +4,7 @@ import prisma from '@/app/lib/prisma'
 import { RunStatus } from '@/app/generated/prisma'
 import ResultsTable, { type SerializedResult, type CriterionMeta } from '@/app/components/ResultsTable'
 import type { CriterionScore, Criterion } from '@/app/lib/scoring'
+import SaveModelButton from '@/app/components/SaveModelButton'
 
 // ---------------------------------------------------------------------------
 // Field display labels — matches the set defined in Phase 3 / CriteriaBuilder
@@ -42,7 +43,7 @@ function deriveCriteria(
   }
   // Fallback: derive from persisted scoringCriteria
   if (Array.isArray(scoringCriteria) && scoringCriteria.length > 0) {
-    return (scoringCriteria as unknown as Criterion[]).map((c) => ({
+    return (scoringCriteria as Criterion[]).map((c) => ({
       field: c.field,
       weight: c.weight,
     }))
@@ -60,8 +61,7 @@ function deriveCriteria(
 //   1. Run summary card — filename, enrichment stats, completion time
 //   2. Criteria used card — fields, match types, weights from run.scoringCriteria
 //   3. ResultsTable — ranked contacts with score bars and expandable breakdowns
-//
-// Phase 6 wires up the "Save as model" button — disabled stub here.
+//   4. "Save as model" button — opens SaveModelModal to persist criteria
 // ---------------------------------------------------------------------------
 
 interface ResultsPageProps {
@@ -71,7 +71,10 @@ interface ResultsPageProps {
 export default async function ResultsPage({ params }: ResultsPageProps) {
   const { runId } = params
 
-  const run = await prisma.run.findUnique({ where: { id: runId } })
+  const run = await prisma.run.findUnique({
+    where: { id: runId },
+    include: { model: { select: { name: true } } },
+  })
   if (!run) notFound()
 
   // Guard: scoring may still be in progress if the user navigates here early
@@ -80,7 +83,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
       <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-sm font-medium text-gray-700">Scoring in progress…</p>
+          <p className="text-sm font-medium text-gray-700">Scoring in progress...</p>
           <p className="mt-1 text-xs text-gray-400">
             This page will show results once scoring completes.
           </p>
@@ -97,7 +100,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
   const scoringCriteria = run.scoringCriteria
   const criteria = deriveCriteria(runResults, scoringCriteria)
 
-  // Serialize Prisma Decimal → plain number; cast JSONB → typed arrays
+  // Serialize Prisma Decimal -> plain number; cast JSONB -> typed arrays
   const serialized: SerializedResult[] = runResults.map((r, i) => ({
     id: r.id,
     rank: i + 1,
@@ -152,20 +155,14 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                   Complete
                 </span>
-                {/* Phase 6: Save as model — disabled stub */}
-                <button
-                  disabled
-                  title="Available in Phase 6"
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full opacity-40 cursor-not-allowed"
-                >
-                  Save as model
-                </button>
+                {/* Phase 6: Save as model — wired up */}
+                <SaveModelButton criteria={usedCriteria} savedModelName={run.model?.name ?? null} />
               </div>
             </div>
           </div>
 
           {/* Stats row */}
-          <div className="px-6 py-4 grid grid-cols-4 divide-x divide-gray-100">
+          <div className="px-6 py-4 grid grid-cols-3 divide-x divide-gray-100">
             <div className="pr-6">
               <p className="text-xs text-gray-400">Total contacts</p>
               <p className="mt-0.5 text-xl font-bold text-gray-900 tabular-nums">
@@ -179,18 +176,10 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
                 <span className="ml-1 text-xs font-medium text-gray-400">({enrichRate}%)</span>
               </p>
             </div>
-            <div className="px-6">
+            <div className="pl-6">
               <p className="text-xs text-gray-400">Failed</p>
               <p className={`mt-0.5 text-xl font-bold tabular-nums ${run.failedCount > 0 ? 'text-red-500' : 'text-gray-300'}`}>
                 {run.failedCount}
-              </p>
-            </div>
-            <div className="pl-6">
-              <p className="text-xs text-gray-400">Avg enrichment</p>
-              <p className="mt-0.5 text-xl font-bold text-gray-700 tabular-nums">
-                {run.avgEnrichmentMs
-                  ? `${(run.avgEnrichmentMs / 1000).toFixed(1)}s`
-                  : <span className="text-gray-300">—</span>}
               </p>
             </div>
           </div>
@@ -222,7 +211,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
                     {c.weight}% weight
                   </span>
                   <span className="shrink-0 text-[10px] text-gray-400">
-                    ✓ {c.score_if_match} / ✗ {c.score_if_no_match}
+                    &#10003; {c.score_if_match} / &#10007; {c.score_if_no_match}
                   </span>
                 </div>
               ))}

@@ -4,33 +4,83 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import UploadForm, { type ConfirmedUpload } from '@/app/components/UploadForm'
 import EnrichmentProgress from './components/EnrichmentProgress'
+import SavedModels from './components/SavedModels'
 
 export default function HomePage() {
   const router = useRouter()
   const [confirmed, setConfirmed] = useState<ConfirmedUpload | null>(null)
   const [enrichError, setEnrichError] = useState<string | null>(null)
+  const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
+  const [scoring, setScoring] = useState(false)
 
   const handleEnrichError = (message: string) => {
     setEnrichError(message)
     setConfirmed(null)
+    setSelectedModel(null)
   }
 
-  // ── Enrichment in progress ─────────────────────────────────────────────────
+  const handleEnrichComplete = async (runId: string) => {
+    // If a saved model is selected, skip CriteriaBuilder and score directly
+    if (selectedModel) {
+      setScoring(true)
+      try {
+        const res = await fetch('/api/score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ run_id: runId, model_id: selectedModel.id }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          handleEnrichError(data.error ?? `Scoring failed (${res.status})`)
+          return
+        }
+
+        router.push(`/run/${runId}/results`)
+      } catch {
+        handleEnrichError('Network error — could not score contacts')
+      }
+      return
+    }
+
+    // Normal flow: go to CriteriaBuilder
+    router.push(`/run/${runId}/score`)
+  }
+
+  const handleModelSelect = (model: { id: string; name: string }) => {
+    setSelectedModel(model)
+  }
+
+  const clearModel = () => {
+    setSelectedModel(null)
+  }
+
+  // -- Enrichment in progress -------------------------------------------------
   if (confirmed) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <EnrichmentProgress
-          blobUrl={confirmed.blob_url}
-          linkedinColumn={confirmed.linkedin_column}
-          originalFilename={confirmed.original_filename}
-          onComplete={(runId) => router.push(`/run/${runId}/score`)}
-          onError={handleEnrichError}
-        />
+        <div className="w-full max-w-md">
+          <EnrichmentProgress
+            blobUrl={confirmed.blob_url}
+            linkedinColumn={confirmed.linkedin_column}
+            originalFilename={confirmed.original_filename}
+            onComplete={handleEnrichComplete}
+            onError={handleEnrichError}
+          />
+          {scoring && (
+            <div className="mt-4 text-center">
+              <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-xs text-gray-500">
+                Scoring with <span className="font-medium text-gray-700">{selectedModel?.name}</span>...
+              </p>
+            </div>
+          )}
+        </div>
       </main>
     )
   }
 
-  // ── Upload flow ────────────────────────────────────────────────────────────
+  // -- Upload flow ------------------------------------------------------------
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 py-16 sm:py-24">
@@ -90,6 +140,28 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Selected model banner */}
+        {selectedModel && (
+          <div className="max-w-3xl mx-auto mb-6">
+            <div className="flex items-center justify-between gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-xs text-blue-700">
+                  Re-running with <span className="font-medium">{selectedModel.name}</span> — upload a CSV to score it automatically
+                </p>
+              </div>
+              <button
+                onClick={clearModel}
+                className="shrink-0 text-xs text-blue-500 hover:text-blue-700 font-medium transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Upload card */}
         <div className="max-w-3xl mx-auto">
           <UploadForm onConfirmed={setConfirmed} />
@@ -111,17 +183,8 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* Phase 6: Saved models section ──────────────────────────────────
-           * Replace this placeholder with:
-           *   <SavedModels onSelect={(model) => { ... }} />
-           * which fetches GET /api/models and lets the user pick a model
-           * to re-run on a freshly uploaded CSV.
-           * ──────────────────────────────────────────────────────────────── */}
-          <div className="mt-10 text-center">
-            <p className="text-xs text-gray-300">
-              Re-run a saved model · available in Phase 6
-            </p>
-          </div>
+          {/* Saved models section */}
+          <SavedModels onSelect={handleModelSelect} />
         </div>
       </div>
     </main>
