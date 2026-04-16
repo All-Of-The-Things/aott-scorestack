@@ -71,36 +71,36 @@
 - JWT fallback disabled — sessions are server-authoritative
 - Session cookie: `HttpOnly`, `SameSite=Lax`, 30-day expiry
 
-### Anonymous-first model
-The core scoring pipeline (upload → enrich → score → view results) is fully accessible without authentication. Auth is only required for persistent/paid features.
+### Session gate model
+
+Upload and enrichment are public. A verified session is required from the score page onwards — no soft email-capture gates.
 
 **Public routes (no session required):**
-- `GET /` — homepage
+- `GET /` — homepage (upload + enrichment choice)
 - `POST /api/upload` — CSV upload
 - `POST /api/enrich` — enrichment run
 - `GET /api/runs/:runId/status` — polling endpoint
 - `POST /api/score` — apply scoring criteria
 - `POST /api/suggest` — AI criteria suggestions
-- `/run/:runId/*` — view run results
 - `/auth/*`, `/api/auth/*` — auth flows
 - `/api/health`, `/api/webhooks/*`
 
 **Auth-required routes (session must be present):**
+- `/run/:runId/score` — criteria builder; redirects to `/auth/signin?callbackUrl=…` if no session
+- `/run/:runId/results` — ranked contact list; shows inline sign-in prompt if no session (not a redirect)
 - `/settings/*` — account, billing, integrations, team
 - `POST /api/models` — saving a scoring model
-- `GET /api/models` — listing saved models (returns empty for anonymous)
+- `GET /api/models` — listing saved models
 - `/api/billing/*` — checkout and portal
 - `/api/org/*` — team management
 - `/api/messages/*` — AI message generation
 - `/api/delivery/*` — delivery jobs
 - `GET /api/runs/:runId/export` — CSV export
 
-### Email capture (soft gate, not auth)
-A lightweight email capture step occurs at two points in the anonymous flow:
-1. **Results gate** — before `/run/:runId/score` is rendered, the client checks `Run.notifyEmail`. If null, shows an inline form: "Enter your email to see your results." Email is stored via `PATCH /api/runs/:runId/email` and results are revealed immediately (no verification required).
-2. **Defer enrichment** — when the user selects "Notify me", they provide an email that is stored in `Run.notifyEmail` at enrich time.
-
-If the user has an active session, their email is pre-filled and the gate is skipped.
+### Notify-me flow (unauthenticated user)
+1. User chooses "Notify me" in `EnrichmentChoice`, enters email → stored as `Run.notifyEmail`, passed in `POST /api/enrich` body
+2. Enrichment completes → `sendEnrichmentComplete()` sends one CTA: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:id/score`
+3. User clicks link → signs in → session created → redirected to score page
 
 ### Middleware protection
 - `middleware.ts` only protects auth-required routes (listed above)
@@ -271,6 +271,48 @@ Process DeliveryJob (immediate or at scheduledAt):
   - `admin`: can invite/remove members, delete any model, manage billing
   - `member`: can create runs, save models, cannot delete others' models, cannot manage billing
 - Invite flow: `POST /api/org/invite` → sends magic-link email with `inviteToken` → on sign-in, token resolves to `orgId`
+
+---
+
+## Database Migrations
+
+### Production strategy
+
+All DB schema changes use **`prisma migrate deploy`** — the only command in the Vercel build:
+
+```
+npx prisma generate && npx prisma migrate deploy && npm run build
+```
+
+- Applies only committed migrations from `prisma/migrations/` in order
+- Skips already-applied migrations (idempotent)
+- Never drops data implicitly — all destructive operations must be explicit in a migration file
+- Fails fast on conflict rather than silently proceeding
+
+Vercel applies migrations before swapping traffic, so the old code is still live during the migration window. Every migration must be backward-compatible with the previous deployment.
+
+### `package.json` scripts
+
+| Script | Command | Purpose |
+|--------|---------|---------|
+| `db:migrate` | `prisma migrate deploy` | Apply pending migrations (production / CI) |
+| `db:migrate:dev` | `prisma migrate dev` | Create and apply a new migration locally |
+| `db:status` | `prisma migrate status` | Show which migrations are pending or failed |
+| `db:resolve:applied` | `prisma migrate resolve --applied <name>` | Mark a migration as already applied (e.g. after a manual schema fix) |
+| `db:resolve:rolled-back` | `prisma migrate resolve --rolled-back <name>` | Mark a failed migration as not applied so the next deploy can retry |
+
+### No-downtime migration rules
+
+| Change | Safe? | Notes |
+|--------|-------|-------|
+| Add nullable column | ✅ | Old code ignores unknown columns |
+| Add new table | ✅ | Old code never references it |
+| Add index | ✅ | Use `CREATE INDEX CONCURRENTLY` for large tables |
+| Rename column | ⚠️ | Two-step: add new → deploy → backfill → drop old |
+| Drop column still used by current code | ❌ | Remove from code first, deploy, then drop |
+| Change column type without compatible cast | ❌ | Two-step with a temporary column |
+
+**Never use `prisma db push` in production.** It bypasses the migration history, silently drops objects, and leaves the DB in a state that `migrate deploy` cannot reconcile.
 
 ---
 
