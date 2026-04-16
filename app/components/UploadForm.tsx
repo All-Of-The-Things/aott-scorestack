@@ -67,7 +67,16 @@ export default function UploadForm({ onConfirmed }: UploadFormProps) {
       const json = await res.json()
 
       if (!res.ok) {
-        throw new Error(json.error ?? `Upload failed (${res.status})`)
+        const message =
+          res.status === 401
+            ? 'You need to sign in before uploading. Please sign in and try again.'
+            : json.error ?? `Upload failed (${res.status})`
+        console.error('[UploadForm] Upload request failed', {
+          status: res.status,
+          error: json.error,
+          url: '/api/upload',
+        })
+        throw new Error(message)
       }
 
       const data = json as UploadResponse

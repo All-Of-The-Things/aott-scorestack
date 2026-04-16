@@ -1,6 +1,7 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
+import { auth } from '@/app/lib/auth'
 import CriteriaBuilder from '@/app/components/CriteriaBuilder'
 import type { Criterion } from '@/app/lib/scoring'
 
@@ -43,8 +44,16 @@ interface ScorePageProps {
 export default async function ScorePage({ params }: ScorePageProps) {
   const { runId } = params
 
-  const run = await prisma.run.findUnique({ where: { id: runId } })
+  const [run, session] = await Promise.all([
+    prisma.run.findUnique({ where: { id: runId } }),
+    auth(),
+  ])
   if (!run) notFound()
+
+  // Session required from the score page onwards.
+  if (!session) {
+    redirect(`/auth/signin?callbackUrl=/run/${runId}/score`)
+  }
 
   const enrichedRows = await prisma.runResult.findMany({
     where: { runId, enrichmentStatus: 'success' },
@@ -59,6 +68,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
     run.totalContacts > 0
       ? Math.round((run.enrichedCount / run.totalContacts) * 100)
       : 0
+
 
   return (
     <main className="min-h-screen bg-gray-50">

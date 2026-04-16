@@ -69,19 +69,46 @@
         "id": { "type": "String", "default": "cuid()", "primary_key": true },
         "name": { "type": "String" },
         "plan": { "type": "Plan", "default": "free" },
-        "contactsUsedThisMonth": { "type": "Int", "default": 0 },
-        "resetDate": { "type": "DateTime", "nullable": true, "description": "Start of current billing period. Set on first enrichment." },
+        "managedCreditsBalance": { "type": "Int", "default": 0, "description": "Remaining managed enrichment credits purchased via credit packs. Decremented per enriched contact when BYOK is not configured." },
         "lsCustomerId": { "type": "String", "nullable": true, "unique": true, "description": "Lemon Squeezy customer ID" },
         "createdAt": { "type": "DateTime", "default": "now()" }
       },
       "relations": {
         "users": "User[]",
         "subscription": "Subscription (optional)",
+        "integration": "OrgIntegration (optional)",
         "runs": "Run[]",
         "scoringModels": "ScoringModel[]",
         "messageTemplates": "MessageTemplate[]",
         "deliveryJobs": "DeliveryJob[]",
-        "usageLogs": "UsageLog[]"
+        "usageLogs": "UsageLog[]",
+        "creditPurchases": "CreditPurchase[]"
+      }
+    },
+
+    "OrgIntegration": {
+      "description": "Encrypted BYOK credentials for LinkedAPI. One record per org. Used exclusively for LinkedIn message delivery — enrichment always uses platform credentials from env vars.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "orgId": { "type": "String", "unique": true, "foreign_key": "Organization.id", "on_delete": "Cascade" },
+        "linkedApiToken": { "type": "String", "description": "AES-256 encrypted LINKED_API_TOKEN value" },
+        "linkedApiIdToken": { "type": "String", "description": "AES-256 encrypted LINKED_API_ID_TOKEN value" },
+        "verifiedAt": { "type": "DateTime", "nullable": true, "description": "Set when a test profile fetch succeeds — confirms credentials are valid" },
+        "createdAt": { "type": "DateTime", "default": "now()" },
+        "updatedAt": { "type": "DateTime", "auto_update": true }
+      },
+      "notes": "Never return raw encrypted values via API. Expose only { configured: true, verifiedAt } to the client."
+    },
+
+    "CreditPurchase": {
+      "description": "Records each managed credit pack purchase. Credits added to Organization.managedCreditsBalance on successful Lemon Squeezy order_created webhook.",
+      "fields": {
+        "id": { "type": "String", "default": "cuid()", "primary_key": true },
+        "orgId": { "type": "String", "foreign_key": "Organization.id", "on_delete": "Cascade" },
+        "lsOrderId": { "type": "String", "unique": true, "description": "Lemon Squeezy order ID" },
+        "credits": { "type": "Int", "description": "Number of enrichment credits purchased" },
+        "amountCents": { "type": "Int", "description": "Amount paid in USD cents" },
+        "createdAt": { "type": "DateTime", "default": "now()" }
       }
     },
 
@@ -102,12 +129,13 @@
     },
 
     "UsageLog": {
-      "description": "Append-only log of contacts consumed per enrichment run. Summed to enforce quota.",
+      "description": "Append-only log of contacts enriched per run. Records enrichment source (byok or managed_credits) for analytics and credit deduction auditing.",
       "fields": {
         "id": { "type": "String", "default": "cuid()", "primary_key": true },
         "orgId": { "type": "String", "foreign_key": "Organization.id", "on_delete": "Cascade" },
         "runId": { "type": "String", "foreign_key": "Run.id", "on_delete": "Cascade" },
         "contactsConsumed": { "type": "Int" },
+        "enrichmentSource": { "type": "EnrichmentSource", "description": "byok = user's own API credentials; managed_credits = Scorestack-managed credits deducted from balance" },
         "createdAt": { "type": "DateTime", "default": "now()" }
       }
     },
@@ -194,15 +222,30 @@
     "Plan": ["free", "starter", "pro", "enterprise"],
     "UserRole": ["admin", "member"],
     "SubscriptionStatus": ["active", "trialing", "past_due", "canceled", "unpaid"],
-    "DeliveryStatus": ["pending", "sent", "opened", "bounced", "failed"],
-    "DeliveryChannel": ["email", "linkedin"],
-    "JobStatus": ["scheduled", "running", "complete", "failed", "cancelled"]
+    "DeliveryStatus": ["pending", "sent", "failed"],
+    "DeliveryChannel": ["linkedin"],
+    "JobStatus": ["scheduled", "running", "complete", "failed", "cancelled"],
+    "EnrichmentSource": ["byok", "managed_credits"]
+  },
+
+  "credit_packs": {
+    "description": "One-time Lemon Squeezy products. Each pack adds credits to Organization.managedCreditsBalance.",
+    "packs": [
+      { "name": "Starter Pack",  "credits": 100,  "price_usd": 6,   "ls_product_id": "LEMONSQUEEZY_CREDITS_100_PRODUCT_ID"  },
+      { "name": "Standard Pack", "credits": 500,  "price_usd": 25,  "ls_product_id": "LEMONSQUEEZY_CREDITS_500_PRODUCT_ID"  },
+      { "name": "Pro Pack",      "credits": 1500, "price_usd": 60,  "ls_product_id": "LEMONSQUEEZY_CREDITS_1500_PRODUCT_ID" },
+      { "name": "Bulk Pack",     "credits": 5000, "price_usd": 175, "ls_product_id": "LEMONSQUEEZY_CREDITS_5000_PRODUCT_ID" }
+    ]
   },
 
   "plan_limits": {
-    "free":       { "contactsPerRun": 50,   "modelsLimit": 1,  "seats": 1 },
-    "starter":    { "contactsPerRun": 500,  "modelsLimit": 5,  "seats": 1 },
-    "pro":        { "contactsPerRun": 2000, "modelsLimit": -1, "seats": 3 },
-    "enterprise": { "contactsPerRun": -1,   "modelsLimit": -1, "seats": -1 }
+    "free":       { "contactsPerRun": 50,  "modelsLimit": 1,  "seats": 1 },
+    "starter":    { "contactsPerRun": -1,  "modelsLimit": 5,  "seats": 1 },
+    "pro":        { "contactsPerRun": -1,  "modelsLimit": -1, "seats": 3 },
+    "enterprise": { "contactsPerRun": -1,  "modelsLimit": -1, "seats": -1 }
+  },
+  "notes": {
+    "enrichment": "All plans use platform LinkedAPI credentials. No per-org credential setup required for enrichment.",
+    "delivery": "LinkedIn message delivery requires BYOK — org must configure OrgIntegration with their own LinkedAPI account."
   }
 }

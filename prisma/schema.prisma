@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
   output   = "../app/generated/prisma"
@@ -11,6 +9,10 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ---------------------------------------------------------------------------
+// Enums — existing
+// ---------------------------------------------------------------------------
 
 enum RunStatus {
   pending
@@ -26,13 +28,284 @@ enum EnrichmentStatus {
   skipped
 }
 
+// ---------------------------------------------------------------------------
+// Enums — growth
+// ---------------------------------------------------------------------------
+
+enum Plan {
+  free
+  starter
+  pro
+  enterprise
+}
+
+enum UserRole {
+  admin
+  member
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  past_due
+  canceled
+  unpaid
+  expired
+}
+
+enum DeliveryStatus {
+  pending
+  sent
+  failed
+}
+
+enum DeliveryChannel {
+  linkedin
+}
+
+enum JobStatus {
+  scheduled
+  running
+  complete
+  failed
+  cancelled
+}
+
+enum EnrichmentSource {
+  byok
+  managed_credits
+}
+
+// ---------------------------------------------------------------------------
+// NextAuth models (required by @auth/prisma-adapter — names must match exactly)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  role          UserRole  @default(member)
+  orgId         String?   @map("org_id")
+
+  org           Organization? @relation(fields: [orgId], references: [id])
+  accounts      Account[]
+  sessions      Session[]
+  runs          Run[]
+  scoringModels ScoringModel[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Account {
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Org / Billing
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id                    String   @id @default(cuid())
+  name                  String   @default("My Workspace")
+  plan                  Plan     @default(free)
+  managedCreditsBalance Int      @default(0) @map("managed_credits_balance")
+  lsCustomerId          String?  @unique @map("ls_customer_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  users            User[]
+  subscription     Subscription?
+  integration      OrgIntegration?
+  runs             Run[]
+  scoringModels    ScoringModel[]
+  messageTemplates MessageTemplate[]
+  deliveryJobs     DeliveryJob[]
+  usageLogs        UsageLog[]
+  creditPurchases  CreditPurchase[]
+
+  @@map("organizations")
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  orgId            String             @unique @map("org_id")
+  lsSubscriptionId String             @unique @map("ls_subscription_id")
+  lsCustomerId     String             @map("ls_customer_id")
+  plan             Plan
+  status           SubscriptionStatus
+  currentPeriodEnd DateTime           @map("current_period_end")
+  cancelAtPeriodEnd Boolean           @default(false) @map("cancel_at_period_end")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model OrgIntegration {
+  id               String    @id @default(cuid())
+  orgId            String    @unique @map("org_id")
+  linkedApiToken   String    @map("linked_api_token")
+  linkedApiIdToken String    @map("linked_api_id_token")
+  verifiedAt       DateTime? @map("verified_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("org_integrations")
+}
+
+model CreditPurchase {
+  id          String   @id @default(cuid())
+  orgId       String   @map("org_id")
+  lsOrderId   String   @unique @map("ls_order_id")
+  credits     Int
+  amountCents Int      @map("amount_cents")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("credit_purchases")
+}
+
+model UsageLog {
+  id                String           @id @default(cuid())
+  orgId             String           @map("org_id")
+  runId             String           @map("run_id")
+  contactsConsumed  Int              @map("contacts_consumed")
+  enrichmentSource  EnrichmentSource @map("enrichment_source")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  run Run          @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@map("usage_logs")
+}
+
+model EnrichmentNotification {
+  id     String    @id @default(cuid())
+  runId  String    @unique @map("run_id")
+  email  String
+  sentAt DateTime? @map("sent_at")
+
+  run Run @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@map("enrichment_notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+
+model MessageTemplate {
+  id           String   @id @default(cuid())
+  orgId        String   @map("org_id")
+  name         String
+  tone         String
+  goal         String
+  systemPrompt String   @map("system_prompt")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  org               Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  generatedMessages GeneratedMessage[]
+
+  @@map("message_templates")
+}
+
+model GeneratedMessage {
+  id             String         @id @default(cuid())
+  runResultId    String         @map("run_result_id")
+  templateId     String         @map("template_id")
+  body           String
+  editedBody     String?        @map("edited_body")
+  deliveryStatus DeliveryStatus @default(pending) @map("delivery_status")
+  deliveryJobId  String?        @map("delivery_job_id")
+  generatedAt    DateTime       @default(now()) @map("generated_at")
+  sentAt         DateTime?      @map("sent_at")
+
+  runResult   RunResult       @relation(fields: [runResultId], references: [id], onDelete: Cascade)
+  template    MessageTemplate @relation(fields: [templateId], references: [id])
+  deliveryJob DeliveryJob?    @relation(fields: [deliveryJobId], references: [id])
+
+  @@map("generated_messages")
+}
+
+model DeliveryJob {
+  id          String          @id @default(cuid())
+  orgId       String          @map("org_id")
+  runId       String          @map("run_id")
+  channel     DeliveryChannel @default(linkedin)
+  status      JobStatus       @default(scheduled)
+  scheduledAt DateTime?       @map("scheduled_at")
+  startedAt   DateTime?       @map("started_at")
+  completedAt DateTime?       @map("completed_at")
+  sentCount   Int             @default(0) @map("sent_count")
+  failedCount Int             @default(0) @map("failed_count")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  org      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  run      Run                @relation(fields: [runId], references: [id])
+  messages GeneratedMessage[]
+
+  @@map("delivery_jobs")
+}
+
+// ---------------------------------------------------------------------------
+// Existing models — extended
+// ---------------------------------------------------------------------------
+
 model ScoringModel {
-  id        String   @id @default(uuid())
+  id        String        @id @default(uuid())
   name      String
   criteria  Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  userId    String?       @map("user_id")
+  orgId     String?       @map("org_id")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
   runs      Run[]
+
+  user User?         @relation(fields: [userId], references: [id])
+  org  Organization? @relation(fields: [orgId], references: [id])
 
   @@map("scoring_models")
 }
@@ -40,6 +313,9 @@ model ScoringModel {
 model Run {
   id                  String        @id @default(uuid())
   modelId             String?       @map("model_id")
+  userId              String?       @map("user_id")
+  orgId               String?       @map("org_id")
+  notifyEmail         String?       @map("notify_email")
   model               ScoringModel? @relation(fields: [modelId], references: [id])
   originalFilename    String        @map("original_filename")
   totalContacts       Int           @default(0) @map("total_contacts")
@@ -52,7 +328,13 @@ model Run {
   totalEnrichmentMs   Int?          @map("total_enrichment_ms")
   createdAt           DateTime      @default(now()) @map("created_at")
   completedAt         DateTime?     @map("completed_at")
-  results             RunResult[]
+
+  user                    User?                   @relation(fields: [userId], references: [id])
+  org                     Organization?           @relation(fields: [orgId], references: [id])
+  results                 RunResult[]
+  usageLogs               UsageLog[]
+  deliveryJobs            DeliveryJob[]
+  enrichmentNotification  EnrichmentNotification?
 
   @@map("runs")
 }
@@ -68,6 +350,8 @@ model RunResult {
   totalScore       Decimal?         @map("total_score")
   criterionScores  Json?            @map("criterion_scores")
   createdAt        DateTime         @default(now()) @map("created_at")
+
+  generatedMessages GeneratedMessage[]
 
   @@map("run_results")
 }

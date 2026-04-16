@@ -1,22 +1,51 @@
 # Scorestack — Business Logic Specification (Growth)
 
-## 1. Deferred Enrichment
+## 1. Deferred Enrichment + Session Gate
 
 ### Intent
-Enrichment of large contact lists (500–2,000 rows) can take 2–10 minutes. Users should not be forced to keep the browser open.
+Enrichment of large contact lists can take several minutes. Users should not be forced to keep the browser open. Upload and enrichment are public (no auth required). Everything from the score page onwards requires a verified session — scored results contain enriched contact data and are private.
 
-### Rules
+### Session gate rules
 
-1. When `POST /api/enrich` is called, the server immediately creates the `Run` row and begins enrichment.
-2. If the request body includes `notify_email`, store it in `Run.notifyEmail` and return an SSE event `{ type: 'deferred', runId }` within the first 2 seconds so the client can safely navigate away.
-3. If no `notify_email`, behave as today — stream SSE progress events until completion.
-4. On enrichment completion (regardless of notification opt-in):
-   - Set `Run.status = 'complete'`, `Run.completedAt`
-   - Insert `UsageLog` row with `contactsConsumed = Run.enrichedCount`
-   - If `Run.notifyEmail` is set and `EnrichmentNotification.sentAt` is null:
-     - Send email via Resend with subject "Your Scorestack run is ready" and a link to `/run/:runId/score`
-     - Set `EnrichmentNotification.sentAt = now()`
-5. `GET /api/runs/:runId/status` is a lightweight polling endpoint. Returns `{ status, enrichedCount, failedCount, totalContacts }`. No auth required if runId is valid (obscurity is sufficient for MVP — add auth gate in v2).
+| Page | No session behaviour |
+|------|---------------------|
+| `/` (upload + enrichment choice) | Public — no gate |
+| `/run/:id/score` | `redirect('/auth/signin?callbackUrl=/run/:id/score')` |
+| `/run/:id/results` | Inline sign-in prompt — "Scored contact lists are private. Sign in to access your ranked results." Not a redirect. |
+
+### Pre-enrichment notification (optional, non-blocking)
+
+`EnrichmentChoice` offers "Notify me by email" for users who want to close the tab:
+- Email input captured in the UI; sent as `notify_email` in the `POST /api/enrich` body → stored as `Run.notifyEmail`
+- On enrichment completion, if `Run.notifyEmail` is set and `EnrichmentNotification` row does not exist:
+  - Call `sendEnrichmentComplete(email, runId)` — sends single-CTA sign-in email: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:runId/score`
+  - Create `EnrichmentNotification { runId, email, sentAt: now() }` to prevent duplicate sends
+- `/auth/signin` is a server component: if session already exists, redirects to `callbackUrl` immediately without showing the form
+
+### Save model (results page)
+
+Results page always has a session by design. `SaveModelButton` only renders in authenticated state:
+- **Authenticated**: "Save as model" → opens `SaveModelModal`
+- **Authenticated, model limit hit**: `SaveModelModal` shows inline 409 upgrade prompt
+
+### Model limit enforcement (`POST /api/models`)
+
+1. Read session via `auth()`. Extract `userId = session?.user?.id ?? null`
+2. If `userId` present: look up user's org plan (if org exists), apply `PLAN_MODEL_LIMITS: { free: 1, starter: 5, pro: -1, enterprise: -1 }`, default to `free` if no org
+3. Count `prisma.scoringModel.count({ where: { userId } })` — if at limit → return 409 `{ error: 'model_limit_reached', limit, plan }`
+4. `SaveModelModal` renders inline upgrade prompt on 409; generic error state on all other failures
+
+### Enrichment rules
+
+1. `POST /api/enrich` creates the `Run` row and begins enrichment. No auth required.
+2. If the request body includes `notify_email`, store it in `Run.notifyEmail` at run creation. The client can safely navigate away once the SSE `started` event is received.
+3. On enrichment completion:
+   - Update `Run.status = 'scoring'`, `Run.enrichedCount`, `Run.failedCount`
+   - If `Run.notifyEmail` is set and `EnrichmentNotification` row does not exist:
+     - Call `sendEnrichmentComplete(email, runId)` — sends single-CTA sign-in email
+     - Create `EnrichmentNotification { runId, email, sentAt: now() }` to prevent duplicate sends
+   - Send SSE `{ type: 'complete', run_id: runId }` → close stream
+4. `GET /api/runs/:runId/status` lightweight polling. Returns `{ status, enrichedCount, failedCount, totalContacts }`. No auth required.
 
 ### Polling behaviour (client)
 - When a user navigates to `/run/:runId` while `status === 'enriching'`, the page polls `/api/runs/:runId/status` every 5 seconds.
@@ -25,34 +54,38 @@ Enrichment of large contact lists (500–2,000 rows) can take 2–10 minutes. Us
 
 ---
 
-## 2. Quota Enforcement
+## 2. Enrichment Quota Enforcement
+
+### Enrichment always uses platform credentials
+Enrichment calls always use the platform's LinkedAPI credentials from server env vars (`LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`). No per-org credential resolution is needed. BYOK is only required for LinkedIn message **delivery** (see §5a).
+
+### Enrichment quota decision tree
+
+```
+POST /api/enrich
+  │
+  ├── 1. Get org from session (optional — anonymous runs are allowed)
+  │
+  ├── 2. Per-run hard cap check:
+  │       If org.plan === 'free' (or no session) AND incomingCount > 50:
+  │         return 402 { error: 'run_limit_exceeded', limit: 50 }
+  │
+  ├── 3. Future: managed credits deduction
+  │       If org has managedCreditsBalance configured and source = 'managed_credits':
+  │         Decrement org.managedCreditsBalance by incomingCount atomically
+  │
+  └── 4. Proceed with enrichment using platform credentials
+        └── On completion: INSERT UsageLog { orgId, runId, contactsConsumed, enrichmentSource: 'managed_credits' }
+```
 
 ### Limits by plan
 
-| Plan | Contacts per run | Active models | Seats |
-|------|-----------------|--------------|-------|
-| free | 50 | 1 | 1 |
-| starter | 500 | 5 | 1 |
-| pro | 2,000 | unlimited | 3 |
-| enterprise | unlimited | unlimited | unlimited |
-
-### Quota check logic (enrich endpoint)
-
-```
-1. Get orgId from session (or null for unauthenticated free users)
-2. Count incoming contacts from CSV (before enrichment starts)
-3. If orgId:
-     used = SUM(UsageLog.contactsConsumed WHERE orgId = ? AND createdAt >= Organization.resetDate)
-   Else:
-     used = 0 (unauthenticated users always on free, no per-org tracking)
-4. limit = PLAN_LIMITS[org.plan].contactsPerRun
-5. If incoming > limit:
-     return 402 { error: 'quota_exceeded', used: 0, limit, plan, upgrade_url }
-   Note: per-run limit (not monthly accumulation) enforced at enrich time.
-   Monthly accumulation tracked via UsageLog for analytics/future enforcement.
-6. Proceed with enrichment.
-7. On completion: INSERT UsageLog { orgId, runId, contactsConsumed: enrichedCount }
-```
+| Plan | Contacts per run | Models | Seats |
+|------|-----------------|--------|-------|
+| free | 50 (hard cap) | 1 | 1 |
+| starter | Unlimited | 5 | 1 |
+| pro | Unlimited | Unlimited | 3 |
+| enterprise | Unlimited | Unlimited | Unlimited |
 
 ### Model limit
 
@@ -64,11 +97,67 @@ Enrichment of large contact lists (500–2,000 rows) can take 2–10 minutes. Us
 - Before `POST /api/org/invite` succeeds, count current members.
 - If count >= seatsLimit: return 409 `{ error: 'seat_limit_reached', limit }`.
 
-### Reset date
+---
 
-- `Organization.resetDate` is set to the first enrichment date of the billing period.
-- For paid plans, it aligns to Stripe's `current_period_start` (updated via webhook).
-- For free plans, it resets monthly from first use.
+## 2a. BYOK Credential Management
+
+### Storing credentials
+
+```
+POST /api/settings/integrations/linkedapi { token, idToken }
+  │
+  ├── Encrypt token with AES-256-GCM using ENCRYPTION_KEY env var
+  ├── Encrypt idToken with AES-256-GCM using ENCRYPTION_KEY env var
+  ├── Upsert OrgIntegration { orgId, linkedApiToken: encrypted, linkedApiIdToken: encrypted }
+  │
+  └── Run a test profile fetch to verify credentials:
+        client.fetchPerson.execute({ personUrl: 'https://linkedin.com/in/williamhgates' })
+        On success: set OrgIntegration.verifiedAt = now()
+        On failure: set OrgIntegration.verifiedAt = null, return 422 { error: 'invalid_credentials' }
+```
+
+### Using credentials at enrichment time
+
+```
+function resolveLinkedApiClient(org) {
+  if (org.integration?.verifiedAt) {
+    // Decrypt and use org's own credentials
+    const token = decrypt(org.integration.linkedApiToken)
+    const idToken = decrypt(org.integration.linkedApiIdToken)
+    return new LinkedApi({ linkedApiToken: token, identificationToken: idToken })
+  }
+  // Fall back to platform credentials (managed_credits path)
+  return getClient() // existing singleton from app/lib/linkedapi.ts
+}
+```
+
+### Security rules
+- Encrypted values are never returned in API responses
+- `GET /api/settings/integrations` returns only `{ configured: boolean, verifiedAt: DateTime | null }`
+- `ENCRYPTION_KEY` is a 32-byte hex string in env vars; rotation requires re-encrypting all stored credentials
+
+---
+
+## 2b. Managed Credit Pack Purchase Flow
+
+```
+User clicks "Buy credits" → selects pack size
+  │
+  └── POST /api/billing/credits { packId }
+        └── Look up pack config (credits, lsProductId)
+        └── Create LS checkout for one-time product with custom_data.orgId + custom_data.credits
+        └── Return { checkout_url }
+
+User completes payment on LS-hosted page
+  │
+  └── LS fires order_created webhook → POST /api/webhooks/lemonsqueezy
+        └── On event_name === 'order_created':
+              credits = meta.custom_data.credits (integer)
+              orgId   = meta.custom_data.orgId
+              lsOrderId = data.id
+              INSERT CreditPurchase { orgId, lsOrderId, credits, amountCents }
+              UPDATE Organization SET managedCreditsBalance += credits (atomic)
+```
 
 ---
 
@@ -144,11 +233,32 @@ User (per contact):
 
 ---
 
+## 5a. Delivery Credential Check (BYOK gate)
+
+Before creating a `DeliveryJob`, verify the org has configured their own LinkedAPI account:
+
+```
+POST /api/delivery/jobs
+  │
+  ├── 1. Require auth (Pro+ plan)
+  │
+  ├── 2. Fetch OrgIntegration for org
+  │       If not found OR verifiedAt is null:
+  │         return 402 { error: 'byok_required', setup_url: '/settings/integrations' }
+  │         UI: "Add your LinkedAPI account in Settings → Integrations to start sending messages"
+  │
+  └── 3. Use org's decrypted LINKED_API_TOKEN / LINKED_API_ID_TOKEN for all delivery calls
+```
+
+**Note:** This gate is delivery-only. Enrichment always uses platform credentials and never requires OrgIntegration.
+
+---
+
 ## 5. Delivery Automation
 
 ### LinkedIn delivery (LinkedAPI)
 
-No additional credentials needed — uses the same `LINKED_API_TOKEN` and `LINKED_API_ID_TOKEN` already configured for enrichment.
+Uses the org's own LinkedAPI credentials fetched from `OrgIntegration` (BYOK — see §5a).
 
 1. User creates `DeliveryJob` via `POST /api/delivery/jobs { run_id, scheduled_at?, contact_ids? }`.
 2. If `scheduledAt` is null or in the past: begin processing immediately; otherwise queue for the scheduled time.

@@ -59,6 +59,11 @@ function emptyCriterion(field: string): Criterion {
 export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [] }: CriteriaBuilderProps) {
   const router = useRouter()
   const [criteria, setCriteria] = useState<Criterion[]>(initialCriteria)
+  // Raw text for each criterion's values input — decoupled from parsed match_values
+  // so commas/spaces aren't stripped while the user is still typing.
+  const [rawValues, setRawValues] = useState<string[]>(
+    () => initialCriteria.map((c) => c.match_values.join(', '))
+  )
   const [suggesting, setSuggesting] = useState(false)
   const [scoring, setScoring] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
@@ -82,6 +87,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
         return
       }
       setCriteria(data.criteria)
+      setRawValues((data.criteria as Criterion[]).map((c) => c.match_values.join(', ')))
     } catch {
       setSuggestError('Network error — please try again')
     } finally {
@@ -96,10 +102,12 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
     const unusedField = availableFields.find((f) => !criteria.some((c) => c.field === f))
     if (!unusedField) return
     setCriteria((prev) => [...prev, emptyCriterion(unusedField)])
+    setRawValues((prev) => [...prev, ''])
   }
 
   function removeCriterion(index: number) {
     setCriteria((prev) => prev.filter((_, i) => i !== index))
+    setRawValues((prev) => prev.filter((_, i) => i !== index))
   }
 
   function updateCriterion(index: number, patch: Partial<Criterion>) {
@@ -108,9 +116,15 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
     )
   }
 
-  function updateMatchValues(index: number, raw: string) {
-    // Comma-separated for list/exact; two values for range
-    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean)
+  function setRawValue(index: number, raw: string) {
+    setRawValues((prev) => { const next = [...prev]; next[index] = raw; return next })
+  }
+
+  function commitMatchValues(index: number, raw: string) {
+    // Called on blur — parse the free-form string into match_values.
+    // Accepts comma or newline as separator; trims whitespace from each part.
+    const parts = raw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean)
+    setRawValues((prev) => { const next = [...prev]; next[index] = parts.join(', '); return next })
     updateCriterion(index, { match_values: parts })
   }
 
@@ -222,8 +236,9 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
                 </label>
                 <input
                   type="text"
-                  value={criterion.match_values.join(', ')}
-                  onChange={(e) => updateMatchValues(i, e.target.value)}
+                  value={rawValues[i] ?? ''}
+                  onChange={(e) => setRawValue(i, e.target.value)}
+                  onBlur={(e) => commitMatchValues(i, e.target.value)}
                   placeholder={criterion.match_type === 'range' ? '50, 500' : 'Director, VP, C-Level'}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
                 />

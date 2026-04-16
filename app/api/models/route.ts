@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
+import { auth } from '@/app/lib/auth'
 import type { Criterion } from '@/app/lib/scoring'
+
+// -1 means unlimited
+const PLAN_MODEL_LIMITS: Record<string, number> = {
+  free: 1,
+  starter: 5,
+  pro: -1,
+  enterprise: -1,
+}
 
 // ---------------------------------------------------------------------------
 // Shared validation
@@ -31,7 +40,11 @@ const CreateModelSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export async function GET() {
+  const session = await auth()
+  const userId = session?.user?.id ?? null
+
   const models = await prisma.scoringModel.findMany({
+    where: userId ? { userId } : { userId: null },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -92,10 +105,39 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // Enforce per-plan model limit (scoped to the current user)
+  const session = await auth()
+  const userId = session?.user?.id ?? null
+
+  if (userId) {
+    // Determine plan: look up org if present, otherwise default to free
+    const orgId = session?.user?.orgId ?? null
+    let plan = 'free'
+    if (orgId) {
+      const org = await prisma.organization.findUnique({
+        where: { id: orgId },
+        select: { plan: true },
+      })
+      plan = org?.plan ?? 'free'
+    }
+
+    const limit = PLAN_MODEL_LIMITS[plan] ?? 1
+    if (limit !== -1) {
+      const count = await prisma.scoringModel.count({ where: { userId } })
+      if (count >= limit) {
+        return NextResponse.json(
+          { error: 'model_limit_reached', limit, plan },
+          { status: 409 }
+        )
+      }
+    }
+  }
+
   const model = await prisma.scoringModel.create({
     data: {
       name,
       criteria: criteria as object,
+      ...(userId ? { userId } : {}),
     },
   })
 

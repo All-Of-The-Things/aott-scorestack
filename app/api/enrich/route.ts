@@ -4,6 +4,7 @@ import prisma from '@/app/lib/prisma'
 import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
+import { sendEnrichmentComplete } from '@/app/lib/notify'
 import { InputJsonObject } from '@prisma/client/runtime/client'
 import { error } from 'console'
 import { get } from '@vercel/blob'
@@ -16,6 +17,7 @@ const EnrichBodySchema = z.object({
   blob_url: z.string().url(),
   linkedin_column: z.string().min(1),
   original_filename: z.string().default('upload.csv'),
+  notify_email: z.string().email().optional(),
 })
 
 // ---------------------------------------------------------------------------
@@ -69,7 +71,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const { blob_url, linkedin_column, original_filename } = body
+  const { blob_url, linkedin_column, original_filename, notify_email } = body
 
   // Set up SSE stream
   const encoder = new TextEncoder()
@@ -89,6 +91,7 @@ export async function POST(request: NextRequest) {
             totalContacts: 0,
             enrichedCount: 0,
             failedCount: 0,
+            ...(notify_email ? { notifyEmail: notify_email } : {}),
           },
         })
         runId = run.id
@@ -99,10 +102,16 @@ export async function POST(request: NextRequest) {
         return
       }
 
+      // Send run_id to the client immediately so the "Notify me" option can appear
+      send({ type: 'started', run_id: runId })
+
       // Fetch CSV from Vercel Blob
       let csvText: string
       try {
-        const blob = await get(blob_url, {access: 'private', token: process.env.VERCEL_BLOB_TOKEN!})
+        const blob = await get(blob_url, {
+          access: 'private',
+          token: process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_TOKEN,
+        })
         
         if (!(blob?.statusCode === 200)) {
           throw new Error(`Blob fetch failed: ${blob?.statusCode}`)
@@ -205,6 +214,22 @@ export async function POST(request: NextRequest) {
           totalEnrichmentMs,
         },
       })
+
+      // Send enrichment completion email if the user chose "notify me"
+      if (notify_email) {
+        try {
+          const alreadySent = await prisma.enrichmentNotification.findUnique({ where: { runId } })
+          if (!alreadySent) {
+            await sendEnrichmentComplete(notify_email, runId)
+            await prisma.enrichmentNotification.create({
+              data: { runId, email: notify_email, sentAt: new Date() },
+            })
+          }
+        } catch (err) {
+          console.error('[enrich] Failed to send completion email:', err)
+          // Non-fatal — enrichment still completes normally
+        }
+      }
 
       send({ type: 'complete', run_id: runId })
       controller.close()

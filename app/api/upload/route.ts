@@ -96,10 +96,13 @@ export async function POST(request: NextRequest) {
   // Upload to Vercel Blob
   let blobResult: { url: string }
   try {
+    // BLOB_READ_WRITE_TOKEN is the standard Vercel env var name; the SDK also
+    // auto-picks it up if no explicit token is passed, but we read it here for
+    // local dev where the var name may differ from the Vercel deployment default.
     blobResult = await put(`uploads/${Date.now()}-${file.name}`, file, {
       access: 'private',
       addRandomSuffix: true,
-      token: process.env.VERCEL_BLOB_TOKEN!,
+      token: process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_TOKEN,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Blob upload failed'

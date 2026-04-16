@@ -29,10 +29,12 @@
 - Submitting → spinner on button, input disabled
 - Sent → green checkmark, "Magic link sent to {email}. Check your spam if you don't see it."
 - Error → red inline error
+- **Already authenticated** → server-side `redirect(callbackUrl)` immediately, form never shown
 
 **Notes:**
 - No sign-up page — first sign-in creates the account automatically
 - After first sign-in, redirect to `/onboarding` if `User.orgId` is null
+- The page is a server component: `auth()` is called before rendering. If a session exists, the user is redirected straight to `callbackUrl`. This handles the case where a notify-me user clicks the email link while already signed in — they land directly on the score page without seeing the form.
 
 ---
 
@@ -86,31 +88,35 @@
 
 ---
 
-### 5. Enrichment Progress Page — modifications
+### 5. Pre-Enrichment Choice + Enrichment Progress
 
-**Two-path UX (shown immediately after upload confirmation):**
+**Pre-enrichment choice screen** (`EnrichmentChoice` component) — shown between upload confirmation and enrichment start (NOT during enrichment):
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Enriching 1,200 contacts…                      │
-│  This may take a few minutes.                   │
-│                                                 │
-│  ┌─────────────────────┐  ┌──────────────────┐  │
-│  │  Wait here          │  │  Notify me       │  │
-│  │  (watch progress)   │  │  (come back      │  │
-│  │                     │  │   later)         │  │
-│  └─────────────────────┘  └──────────────────┘  │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│  contacts.csv                                       │
+│  Ready to enrich — how would you like to proceed?  │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  Wait here                                  │   │
+│  │  Stay on this page and watch progress       │   │
+│  └─────────────────────────────────────────────┘   │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  Notify me by email                         │   │
+│  │  Start in background, email me when ready   │   │
+│  │  [ you@example.com ] [Start & notify]       │   │
+│  └─────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
 ```
 
-**"Wait here" path:** Existing SSE progress UI (unchanged).
+- "Wait here" immediately transitions to `EnrichmentProgress` (SSE stream starts)
+- "Notify me" expands email input on click → submit passes `notify_email` in `POST /api/enrich` → transitions to `EnrichmentProgress`
+- `EnrichmentProgress` shows bottom banner when `notifyEmail` prop is set: "We'll email {email} when results are ready. You can safely close this tab."
 
-**"Notify me" path:**
-- Expand an email input below the two buttons
-- Pre-filled with signed-in user's email (editable)
-- CTA: "Notify me & continue"
-- On submit: show confirmation banner "We'll email you at {email} when enrichment is done. You can safely navigate away."
-- Navigation to `/` is unblocked
+**Completion email** (sent by server when enrichment finishes with `notifyEmail` set):
+- **Single CTA: "Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:runId/score`
+- No direct results link — clicking the sign-in link verifies the user and grants a session in one step
 
 **Polling fallback (returning user):**
 - If user navigates to `/run/:runId` while status is `enriching`:
@@ -122,9 +128,31 @@
 
 ### 6. Results Page — modifications (`/run/[runId]/results`)
 
+**Session required.** Unauthenticated visitors see an inline sign-in prompt (not a redirect):
+- Lock icon + "Sign in to view results" heading
+- Copy: "Scored contact lists are private. Sign in to access your ranked results and save scoring models."
+- "Sign in →" CTA → `/auth/signin?callbackUrl=/run/:runId/results`
+- Note: "No account yet? Signing in creates one automatically."
+
+**Save as model button** (`SaveModelButton`) — authenticated state only:
+
+| State | Condition | Behaviour |
+|-------|-----------|-----------|
+| "Save as model" (blue pill) | Authenticated | Opens `SaveModelModal` |
+| "Saved as {name}" (green pill, checkmark) | Model already saved | Read-only confirmation |
+
+**Activation banner** — shown when `?activated=1` is in the URL:
+- Green banner: "Account activated — you can now save scoring models and reuse them on future uploads."
+- Auto-removes `?activated=1` from the URL via `router.replace`.
+
+**Model limit gate** — shown inside `SaveModelModal` (not as a modal replacement) when `POST /api/models` returns 409:
+- Amber block: "You've reached your {limit}-model limit on the {plan} plan. Upgrade to Starter to save up to 5 models."
+- Link to `/settings/billing`
+- Save button disabled
+
 **New: Export button**
 
-Position: Top-right of results section, alongside existing "Save as model" button.
+Position: Top-right of results section, alongside "Save as model".
 
 - **Free tier:** Button labelled "Export CSV" with a lock icon. On click: opens `UpgradeModal` for Starter.
 - **Paid tier:** Button labelled "Export CSV". On click: triggers `GET /api/runs/:runId/export` file download.
@@ -307,12 +335,17 @@ Main flows:
 
 | Component | File | Status |
 |-----------|------|--------|
-| UsageBanner | `app/components/UsageBanner.tsx` | New |
-| UpgradeModal | `app/components/UpgradeModal.tsx` | New |
-| DeferredEnrichmentChoice | `app/components/DeferredEnrichmentChoice.tsx` | New |
-| ExportButton | `app/components/ExportButton.tsx` | New |
-| MessagesTab | `app/components/MessagesTab.tsx` | New |
-| MessageTemplateModal | `app/components/MessageTemplateModal.tsx` | New |
-| DeliverySchedulerModal | `app/components/DeliverySchedulerModal.tsx` | New (LinkedIn only, no credential input) |
-| ResultsTable | `app/components/ResultsTable.tsx` | Modified (add export btn + tab bar) |
-| EnrichmentProgress | `app/components/EnrichmentProgress.tsx` | Modified (add two-path UX) |
+| EnrichmentChoice | `app/components/EnrichmentChoice.tsx` | ✅ Built — pre-enrichment two-path screen |
+| EnrichmentProgress | `app/components/EnrichmentProgress.tsx` | ✅ Built — `notifyEmail` prop, confirmation banner |
+| EmailGate | `app/components/EmailGate.tsx` | ⚠️ Retired — soft email gate replaced by session requirement |
+| NotificationCheckGate | `app/components/NotificationCheckGate.tsx` | ⚠️ Retired — replaced by session gate on score/results pages |
+| SaveModelButton | `app/components/SaveModelButton.tsx` | ✅ Built — authenticated state only |
+| SaveModelModal | `app/components/SaveModelModal.tsx` | ✅ Built — 409 upgrade prompt inline |
+| ActivationBanner | `app/components/ActivationBanner.tsx` | ✅ Built — shown on `?activated=1`, cleans URL |
+| UsageBanner | `app/components/UsageBanner.tsx` | Not started |
+| UpgradeModal | `app/components/UpgradeModal.tsx` | Not started |
+| ExportButton | `app/components/ExportButton.tsx` | Not started |
+| MessagesTab | `app/components/MessagesTab.tsx` | Not started |
+| MessageTemplateModal | `app/components/MessageTemplateModal.tsx` | Not started |
+| DeliverySchedulerModal | `app/components/DeliverySchedulerModal.tsx` | Not started |
+| ResultsTable | `app/components/ResultsTable.tsx` | Needs: export btn + tab bar |

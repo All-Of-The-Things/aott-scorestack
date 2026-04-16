@@ -9,10 +9,10 @@
 | Database | PostgreSQL via Prisma ORM |
 | File storage | Vercel Blob |
 | AI / LLM | Anthropic SDK (Claude) |
-| LinkedIn enrichment | @linkedapi/node SDK |
+| LinkedIn enrichment | @linkedapi/node SDK (platform credentials from env vars — no user setup required) |
 | Email | Resend (magic-link auth + enrichment notifications only) |
-| Payments | Lemon Squeezy (Merchant of Record — supports Uruguay, no US bank account required) |
-| LinkedIn delivery | @linkedapi/node SDK (same SDK as enrichment, messaging workflow) |
+| Payments | Lemon Squeezy (subscriptions + one-time credit packs; MoR, Uruguay-safe) |
+| LinkedIn delivery | @linkedapi/node SDK (BYOK — user's own LinkedAPI credentials stored encrypted per org) |
 | Deployment | Vercel |
 
 ---
@@ -71,15 +71,47 @@
 - JWT fallback disabled — sessions are server-authoritative
 - Session cookie: `HttpOnly`, `SameSite=Lax`, 30-day expiry
 
+### Anonymous-first model
+The core scoring pipeline (upload → enrich → score → view results) is fully accessible without authentication. Auth is only required for persistent/paid features.
+
+**Public routes (no session required):**
+- `GET /` — homepage
+- `POST /api/upload` — CSV upload
+- `POST /api/enrich` — enrichment run
+- `GET /api/runs/:runId/status` — polling endpoint
+- `POST /api/score` — apply scoring criteria
+- `POST /api/suggest` — AI criteria suggestions
+- `/run/:runId/*` — view run results
+- `/auth/*`, `/api/auth/*` — auth flows
+- `/api/health`, `/api/webhooks/*`
+
+**Auth-required routes (session must be present):**
+- `/settings/*` — account, billing, integrations, team
+- `POST /api/models` — saving a scoring model
+- `GET /api/models` — listing saved models (returns empty for anonymous)
+- `/api/billing/*` — checkout and portal
+- `/api/org/*` — team management
+- `/api/messages/*` — AI message generation
+- `/api/delivery/*` — delivery jobs
+- `GET /api/runs/:runId/export` — CSV export
+
+### Email capture (soft gate, not auth)
+A lightweight email capture step occurs at two points in the anonymous flow:
+1. **Results gate** — before `/run/:runId/score` is rendered, the client checks `Run.notifyEmail`. If null, shows an inline form: "Enter your email to see your results." Email is stored via `PATCH /api/runs/:runId/email` and results are revealed immediately (no verification required).
+2. **Defer enrichment** — when the user selects "Notify me", they provide an email that is stored in `Run.notifyEmail` at enrich time.
+
+If the user has an active session, their email is pre-filled and the gate is skipped.
+
 ### Middleware protection
-- `middleware.ts` at project root intercepts all routes except `/`, `/api/auth/*`, and `/api/health`
-- Unauthenticated requests → redirect to `/auth/signin`
-- API routes that need auth use `getServerSession()` from `next-auth` and return 401 if missing
+- `middleware.ts` only protects auth-required routes (listed above)
+- Core pipeline routes are always public
+- API routes that need auth use `auth()` from `next-auth` server-side and return `401` if missing
 
 ### Org bootstrapping
 - On first sign-in, a `User` row is created by NextAuth's Prisma adapter
 - A post-sign-in callback creates a default `Organization` for the user (plan: `free`, `role: admin`)
 - Subsequent invites link new users to an existing `orgId`
+- Anonymous runs (`Run.userId = null`, `Run.orgId = null`) are not associated with any org until sign-in
 
 ---
 

@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
+import { auth } from '@/app/lib/auth'
 import { RunStatus } from '@/app/generated/prisma'
 import ResultsTable, { type SerializedResult, type CriterionMeta } from '@/app/components/ResultsTable'
 import type { CriterionScore, Criterion } from '@/app/lib/scoring'
 import SaveModelButton from '@/app/components/SaveModelButton'
+import ActivationBanner from '@/app/components/ActivationBanner'
 
 // ---------------------------------------------------------------------------
 // Field display labels — matches the set defined in Phase 3 / CriteriaBuilder
@@ -66,16 +68,50 @@ function deriveCriteria(
 
 interface ResultsPageProps {
   params: { runId: string }
+  searchParams: { activated?: string }
 }
 
-export default async function ResultsPage({ params }: ResultsPageProps) {
+export default async function ResultsPage({ params, searchParams }: ResultsPageProps) {
   const { runId } = params
 
-  const run = await prisma.run.findUnique({
-    where: { id: runId },
-    include: { model: { select: { name: true } } },
-  })
+  const [run, session] = await Promise.all([
+    prisma.run.findUnique({
+      where: { id: runId },
+      include: { model: { select: { name: true } } },
+    }),
+    auth(),
+  ])
   if (!run) notFound()
+
+  // Session required — results contain enriched contact data.
+  // Not a redirect: show an inline prompt so the user understands the context.
+  if (!session) {
+    const signInUrl = `/auth/signin?callbackUrl=/run/${runId}/results`
+    return (
+      <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
+          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+          </div>
+          <h2 className="text-base font-semibold text-gray-900 mb-1">Sign in to view results</h2>
+          <p className="text-sm text-gray-500 mb-6">
+            Scored contact lists are private. Sign in to access your ranked results and save scoring models.
+          </p>
+          <a
+            href={signInUrl}
+            className="inline-flex items-center justify-center w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Sign in →
+          </a>
+          <p className="mt-4 text-xs text-gray-400">
+            No account yet? Signing in creates one automatically.
+          </p>
+        </div>
+      </main>
+    )
+  }
 
   // Guard: scoring may still be in progress if the user navigates here early
   if (run.status !== RunStatus.complete) {
@@ -123,9 +159,13 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
     ? (scoringCriteria as unknown as Criterion[])
     : []
 
+  const justActivated = searchParams.activated === '1'
+
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-12">
+
+        {justActivated && <ActivationBanner />}
 
         {/* Back link */}
         <Link
@@ -156,7 +196,11 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
                   Complete
                 </span>
                 {/* Phase 6: Save as model — wired up */}
-                <SaveModelButton criteria={usedCriteria} savedModelName={run.model?.name ?? null} />
+                <SaveModelButton
+                  criteria={usedCriteria}
+                  savedModelName={run.model?.name ?? null}
+                  knownEmail={run.notifyEmail ?? undefined}
+                />
               </div>
             </div>
           </div>

@@ -17,6 +17,8 @@ interface EnrichmentProgressProps {
   blobUrl: string
   linkedinColumn: string
   originalFilename: string
+  /** Email to notify when enrichment completes (from pre-enrichment choice). */
+  notifyEmail?: string
   /** Called with the new run_id when enrichment finishes successfully. */
   onComplete: (runId: string) => void
   /** Called with an error message if the stream fails or the server returns an error event. */
@@ -57,6 +59,7 @@ export default function EnrichmentProgress({
   blobUrl,
   linkedinColumn,
   originalFilename,
+  notifyEmail,
   onComplete,
   onError,
 }: EnrichmentProgressProps) {
@@ -70,6 +73,8 @@ export default function EnrichmentProgress({
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [estimatedRemainingMs, setEstimatedRemainingMs] = useState<number>(0)
   const [avgMsPerContact, setAvgMsPerContact] = useState<number>(0)
+
+  const [runId, setRunId] = useState<string | null>(null)
 
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -90,6 +95,7 @@ export default function EnrichmentProgress({
             blob_url: blobUrl,
             linkedin_column: linkedinColumn,
             original_filename: originalFilename,
+            ...(notifyEmail ? { notify_email: notifyEmail } : {}),
           }),
           signal: abort.signal,
         })
@@ -138,7 +144,9 @@ export default function EnrichmentProgress({
               continue
             }
 
-            if (event.type === 'progress') {
+            if (event.type === 'started') {
+              setRunId(event.run_id as string)
+            } else if (event.type === 'progress') {
               const cur = event.current as number
               const tot = event.total as number
               const name = (event.contact_name as string) || `Row ${cur}`
@@ -331,6 +339,18 @@ export default function EnrichmentProgress({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confirm the user can safely close the tab when they chose "notify me" upfront */}
+      {notifyEmail && step === 'enriching' && (
+        <div className="border-t border-gray-100 px-6 py-3 bg-gray-50/60">
+          <p className="text-xs text-gray-500 flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            We&apos;ll email <span className="font-medium text-gray-700">{notifyEmail}</span> when results are ready. You can safely close this tab.
+          </p>
         </div>
       )}
     </div>
