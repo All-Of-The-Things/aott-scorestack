@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx prisma generate && (npx prisma migrate resolve --applied 20260415185418_growth_schema || true) && npx prisma migrate deploy && npm run build"
+  "buildCommand": "npx prisma generate && (npx prisma migrate resolve --applied 20260415185418_growth_schema || true) && (npx prisma migrate resolve --applied 20260416175155_scoring_model_user_ownership || true) && npx prisma migrate deploy && npm run build"
 }
