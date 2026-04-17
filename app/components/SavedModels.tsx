@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSession } from 'next-auth/react'
 
 interface ModelSummary {
   id: string
@@ -24,16 +25,23 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 export default function SavedModels({ onSelect }: SavedModelsProps) {
+  const { status } = useSession()
   const [models, setModels] = useState<ModelSummary[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (status === 'unauthenticated') {
+      setLoading(false)
+      return
+    }
+    if (status !== 'authenticated') return
+
     fetch('/api/models')
       .then((res) => (res.ok ? res.json() : { models: [] }))
       .then((data) => setModels(data.models ?? []))
       .catch(() => setModels([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [status])
 
   if (loading || models.length === 0) return null
 

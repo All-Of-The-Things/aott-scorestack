@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 
@@ -19,7 +19,8 @@ function deriveWorkspaceName(email: string | null | undefined): string {
   return base.charAt(0).toUpperCase() + base.slice(1)
 }
 
-export default function OnboardingPage() {
+// useSearchParams() must be inside a Suspense boundary.
+function OnboardingForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') ?? '/'
@@ -119,5 +120,13 @@ export default function OnboardingPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={null}>
+      <OnboardingForm />
+    </Suspense>
   )
 }
