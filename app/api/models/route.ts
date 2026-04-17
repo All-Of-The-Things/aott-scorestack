@@ -43,8 +43,12 @@ export async function GET() {
   const session = await auth()
   const userId = session?.user?.id ?? null
 
+  if (!userId) {
+    return NextResponse.json({ models: [] }, { status: 200 })
+  }
+
   const models = await prisma.scoringModel.findMany({
-    where: userId ? { userId } : { userId: null },
+    where: { userId },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,

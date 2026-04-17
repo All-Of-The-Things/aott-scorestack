@@ -33,30 +33,51 @@
 
 **Notes:**
 - No sign-up page — first sign-in creates the account automatically
-- After first sign-in, redirect to `/onboarding` if `User.orgId` is null
-- The page is a server component: `auth()` is called before rendering. If a session exists, the user is redirected straight to `callbackUrl`. This handles the case where a notify-me user clicks the email link while already signed in — they land directly on the score page without seeing the form.
+- `SignInForm` wraps the `callbackUrl` through `/auth/confirmed?next=<callbackUrl>` before calling `signIn()`. This routes every magic-link sign-in through the confirmation page.
+- The page is a server component: `auth()` is called before rendering. If a session exists, the user is redirected straight to `callbackUrl` (bypasses the confirmation page — they're already signed in).
+
+---
+
+### 1b. Auth Confirmation (`/auth/confirmed`)
+
+**Shown:** Immediately after a magic link is clicked and the session is created. Every sign-in flows through this page — direct and notify-me.
+
+**Layout:** Centered card, max-w-sm, same visual language as the sign-in page.
+
+**Content:**
+- Green checkmark icon
+- Heading: "You're signed in"
+- Sub-copy: "Signed in as {email}"
+- Progress bar animating over 2.5s → auto-redirects to `next` param on completion
+- "Continue →" link for immediate navigation without waiting
+
+**Server component (`page.tsx`):**
+- Reads `next` query param; sanitises to relative paths only (open-redirect guard)
+- If no session: `redirect('/auth/signin?callbackUrl=<next>')` (magic link expired or already used)
+- If session: render `ConfirmedClient` with `{ email, next }`
+
+**Client component (`ConfirmedClient.tsx`):**
+- `useEffect` with 2500ms timeout → `router.push(next)`
+- Progress bar uses a CSS `@keyframes grow` animation timed to match the delay
 
 ---
 
 ### 2. Onboarding (`/onboarding`)
 
-**Shown:** Once, immediately after first sign-in.
+**Trigger:** `session.user.orgName === "My Workspace"`. Auth-required server components render `<WorkspaceNamePrompt>` as a fixed overlay (`z-50`) on the current page — the user never navigates away. `router.refresh()` after a successful `PATCH /api/org` re-runs the server component, the session callback fetches the updated `orgName` from DB, and the overlay unmounts. `/onboarding` exists as a standalone fallback for direct navigation only.
 
-**Step 1 — Org name:**
-- "What's your team or company name?"
-- Text input (auto-populated with email domain if available)
-- CTA: "Continue"
+**Layout:** Centered card, max-w-sm, same visual language as the sign-in page.
 
-**Step 2 — Optional invite:**
-- "Invite a teammate" (shown only if plan supports it — skipped on Free)
-- Email input + "Send invite" button
-- Skip link: "I'll do this later"
+**Content:**
+- Heading: "Name your workspace"
+- Sub-copy: "This is how your team and scoring models will be labelled."
+- Text input — label: "Workspace name", placeholder: derived from email domain (e.g. `martin@acme.com` → `"Acme"`)
+- CTA button: "Get started"
+- States: Default → Submitting → overlay dismissed via `router.refresh()`
 
-**Step 3 — Plan choice (optional):**
-- Brief comparison of Free vs Starter vs Pro
-- "Start free" (default) + "Start Pro trial (14 days free)"
+**Validation:** Non-empty, ≤ 80 characters.
 
-**On completion:** Redirect to `/` (home).
+**On submit:** `PATCH /api/org { name }` → on 200: `router.refresh()` (inline) or `router.push(callbackUrl)` (standalone page).
 
 ---
 
@@ -77,14 +98,13 @@
 
 **Position:** Below the main nav, above page content. Present on all authenticated pages.
 
-**Content:** `{contactsUsed} / {contactsLimit} contacts used this month · Resets {resetDate}` + "Upgrade" link (if not enterprise).
+**Content by plan:**
 
-**Visual:**
-- Progress bar: green if < 70%, amber if 70–90%, red if > 90%
-- "Upgrade" link opens `UpgradeModal`
-- Free tier: shows `50 / 50 per run` (not monthly, since free is per-run limited)
+- **Free:** `"Free plan · 50 contacts per run"` + "Upgrade →" link. No progress bar — limit is per-run, not cumulative.
+- **Starter / Pro:** `"{managedCreditsBalance} enrichment credits remaining"` + "Buy more →" link → `/settings/billing`. Progress bar: green if > 200, amber if 51–200, red if ≤ 50.
+- **Enterprise:** Hidden — no credit cap.
 
-**Hidden:** If plan is enterprise or if limit is -1.
+No `resetDate` or `contactsUsedThisMonth` — the quota model uses a per-run cap (free) or a pre-purchased credit balance (paid), neither of which resets on a schedule.
 
 ---
 
@@ -326,7 +346,8 @@ Main flows:
   /settings/billing     Billing
   /settings/team        Team management
   /auth/signin          Sign in
-  /onboarding           First-run setup
+  /auth/confirmed       Post-login confirmation (auto-redirects to next)
+  /onboarding           First-run workspace setup (standalone fallback)
 ```
 
 ---
@@ -339,6 +360,7 @@ Main flows:
 | EnrichmentProgress | `app/components/EnrichmentProgress.tsx` | ✅ Built — `notifyEmail` prop, confirmation banner |
 | EmailGate | `app/components/EmailGate.tsx` | ⚠️ Retired — soft email gate replaced by session requirement |
 | NotificationCheckGate | `app/components/NotificationCheckGate.tsx` | ⚠️ Retired — replaced by session gate on score/results pages |
+| WorkspaceNamePrompt | `app/components/WorkspaceNamePrompt.tsx` | ✅ Built — fixed overlay; `router.refresh()` on submit |
 | SaveModelButton | `app/components/SaveModelButton.tsx` | ✅ Built — authenticated state only |
 | SaveModelModal | `app/components/SaveModelModal.tsx` | ✅ Built — 409 upgrade prompt inline |
 | ActivationBanner | `app/components/ActivationBanner.tsx` | ✅ Built — shown on `?activated=1`, cleans URL |

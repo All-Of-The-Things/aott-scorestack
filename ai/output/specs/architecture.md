@@ -73,7 +73,11 @@
 
 ### Session gate model
 
-Upload and enrichment are public. A verified session is required from the score page onwards — no soft email-capture gates.
+Upload and enrichment are public. Auth-required pages apply a three-tier gate:
+
+1. **No session** → sign-in redirect (or inline prompt for the results page)
+2. **Session + `orgName === "My Workspace"`** → `WorkspaceNamePrompt` overlay rendered on the current page — no navigation
+3. **Session + named workspace** → page renders normally
 
 **Public routes (no session required):**
 - `GET /` — homepage (upload + enrichment choice)
@@ -85,22 +89,29 @@ Upload and enrichment are public. A verified session is required from the score 
 - `/auth/*`, `/api/auth/*` — auth flows
 - `/api/health`, `/api/webhooks/*`
 
-**Auth-required routes (session must be present):**
-- `/run/:runId/score` — criteria builder; redirects to `/auth/signin?callbackUrl=…` if no session
-- `/run/:runId/results` — ranked contact list; shows inline sign-in prompt if no session (not a redirect)
+**Auth-required routes (all three gate tiers apply):**
+- `/run/:runId/score` — criteria builder
+- `/run/:runId/results` — ranked contact list (no-session shows inline prompt, not a redirect)
+- `/onboarding` — workspace name setup (no-session redirects to sign-in; named-workspace redirects to `/`)
 - `/settings/*` — account, billing, integrations, team
 - `POST /api/models` — saving a scoring model
 - `GET /api/models` — listing saved models
 - `/api/billing/*` — checkout and portal
-- `/api/org/*` — team management
+- `/api/org/*` — org management (includes `PATCH /api/org` for workspace name)
 - `/api/messages/*` — AI message generation
 - `/api/delivery/*` — delivery jobs
 - `GET /api/runs/:runId/export` — CSV export
 
+**Session shape** — JWT and session callbacks expose `orgName`:
+```ts
+// JWT callback: token.orgName = org?.name
+// Session callback: session.user.orgName = token.orgName
+```
+
 ### Notify-me flow (unauthenticated user)
 1. User chooses "Notify me" in `EnrichmentChoice`, enters email → stored as `Run.notifyEmail`, passed in `POST /api/enrich` body
 2. Enrichment completes → `sendEnrichmentComplete()` sends one CTA: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:id/score`
-3. User clicks link → signs in → session created → redirected to score page
+3. User clicks link → `/auth/signin` → enters email → `SignInForm` wraps callbackUrl through `/auth/confirmed?next=/run/:id/score` → magic link sent → user clicks → session created → `/auth/confirmed` shows confirmation → auto-redirects to score page
 
 ### Middleware protection
 - `middleware.ts` only protects auth-required routes (listed above)
@@ -156,19 +167,22 @@ User uploads CSV
 ```
 POST /api/enrich
   │
-  ├── getServerSession() → userId, orgId
-  ├── fetch Organization.plan → limit
-  ├── count incoming contacts from CSV
-  ├── fetch UsageLog.sum(contactsConsumed) for current billing period
+  ├── get org from session (optional — anonymous runs allowed)
   │
-  ├── if (used + incoming) > limit
-  │       └── return 402 { error: 'quota_exceeded', used, limit, plan }
+  ├── Per-run hard cap (free plan / no session):
+  │       If plan === 'free' or no session AND incomingCount > 50:
+  │         return 402 { error: 'run_limit_exceeded', limit: 50 }
   │
-  └── proceed with enrichment
-        └── on completion: insert UsageLog row
+  ├── Managed credits deduction (paid plans):
+  │       If org.managedCreditsBalance < incomingCount:
+  │         return 402 { error: 'insufficient_credits', balance: org.managedCreditsBalance }
+  │       Decrement org.managedCreditsBalance by incomingCount atomically
+  │
+  └── Proceed with enrichment
+        └── On completion: INSERT UsageLog { orgId, runId, contactsConsumed, enrichmentSource }
 ```
 
-Quota resets monthly, aligned to `Organization.resetDate` (set to first-enrichment date of billing period).
+No reset date. The free plan enforces a per-run cap (50 contacts), not a monthly rolling window. Paid plans use a pre-purchased credit balance (`managedCreditsBalance`) topped up via Lemon Squeezy credit packs — it never auto-resets. `Subscription.currentPeriodEnd` is used only for renewal/billing logic, not quota.
 
 ---
 
