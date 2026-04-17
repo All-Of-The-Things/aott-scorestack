@@ -49,6 +49,12 @@ session.user.orgName = token.orgName as string | undefined
 - Full sign-in flow: `/auth/signin` → user enters email → `SignInForm` wraps `callbackUrl` through `/auth/confirmed?next=<callbackUrl>` → magic link sent → user clicks → session created → `/auth/confirmed` shows confirmation (2.5s auto-redirect) → `next` destination
 - If already signed in when clicking notify-me email link: `/auth/signin` server component redirects directly to `callbackUrl`, bypassing the confirmation page
 
+### List models (`GET /api/models`)
+
+- If no session: return `{ models: [] }` immediately — no DB query, no orphan records exposed.
+- If session: return models scoped to `userId` only — never `userId: null` records.
+- `SavedModels` component checks `useSession()` before fetching: skips the request entirely when `status === 'unauthenticated'`; waits for `status === 'authenticated'` before calling the API. The section never renders for logged-out users.
+
 ### Save model (results page)
 
 Results page always has a session by design. `SaveModelButton` only renders in authenticated state:
@@ -399,8 +405,6 @@ POST /api/webhooks/lemonsqueezy
     plan = lookup from variant ID in data.attributes.variant_id
     Upsert Organization { lsCustomerId, plan }
     Upsert Subscription { orgId, lsSubscriptionId, lsCustomerId, plan, status: 'active', currentPeriodEnd }
-    Reset Organization.contactsUsedThisMonth = 0
-    Set Organization.resetDate = now()
 
   'subscription_updated':
     Find Subscription by lsSubscriptionId
