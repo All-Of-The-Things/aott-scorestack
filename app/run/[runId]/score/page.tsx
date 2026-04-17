@@ -3,6 +3,7 @@ import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
 import CriteriaBuilder from '@/app/components/CriteriaBuilder'
+import WorkspaceNamePrompt from '@/app/components/WorkspaceNamePrompt'
 import type { Criterion } from '@/app/lib/scoring'
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,10 @@ export default async function ScorePage({ params }: ScorePageProps) {
 
   return (
     <main className="min-h-screen bg-gray-50">
+      <WorkspaceNamePrompt
+        show={session.user.orgName === 'My Workspace'}
+        email={session.user.email}
+      />
       <div className="max-w-3xl mx-auto px-4 py-12">
 
         {/* Back link */}

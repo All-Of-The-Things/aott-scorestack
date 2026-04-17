@@ -13,6 +13,7 @@ declare module "next-auth" {
       email?: string | null;
       image?: string | null;
       orgId: string | null;
+      orgName: string | undefined;
       role: UserRole;
     };
   }
@@ -41,13 +42,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     // Attach custom user fields to the session so they're available
     // client-side via useSession() and server-side via auth().
-    session({ session, user }) {
+    // orgName is used to detect first-time users (value === "My Workspace").
+    async session({ session, user }) {
+      const orgId = (user as { orgId?: string | null }).orgId ?? null;
+      let orgName: string | undefined;
+      if (orgId) {
+        const org = await prisma.organization.findUnique({
+          where: { id: orgId },
+          select: { name: true },
+        });
+        orgName = org?.name ?? undefined;
+      }
       return {
         ...session,
         user: {
           ...session.user,
           id: user.id,
-          orgId: (user as { orgId?: string | null }).orgId ?? null,
+          orgId,
+          orgName,
           role: ((user as { role?: string }).role ?? "member") as UserRole,
         },
       };

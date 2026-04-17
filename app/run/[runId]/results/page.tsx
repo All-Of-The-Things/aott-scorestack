@@ -1,4 +1,5 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import WorkspaceNamePrompt from '@/app/components/WorkspaceNamePrompt'
 import Link from 'next/link'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
@@ -163,6 +164,10 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
 
   return (
     <main className="min-h-screen bg-gray-50">
+      <WorkspaceNamePrompt
+        show={session.user.orgName === 'My Workspace'}
+        email={session.user.email}
+      />
       <div className="max-w-3xl mx-auto px-4 py-12">
 
         {justActivated && <ActivationBanner />}

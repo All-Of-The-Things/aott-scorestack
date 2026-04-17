@@ -22,10 +22,13 @@ export default function SignInForm({ callbackUrl }: SignInFormProps) {
     setStep('submitting')
 
     try {
+      // Route through the confirmation page so the user sees a "signed in"
+      // banner before landing on their destination.
+      const confirmedUrl = `/auth/confirmed?next=${encodeURIComponent(callbackUrl)}`
       const result = await signIn('resend', {
         email: email.trim(),
         redirect: false,
-        callbackUrl,
+        callbackUrl: confirmedUrl,
       })
 
       if (result?.error) {
