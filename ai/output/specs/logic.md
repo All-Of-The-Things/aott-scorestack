@@ -7,11 +7,37 @@ Enrichment of large contact lists can take several minutes. Users should not be 
 
 ### Session gate rules
 
-| Page | No session behaviour |
-|------|---------------------|
-| `/` (upload + enrichment choice) | Public — no gate |
-| `/run/:id/score` | `redirect('/auth/signin?callbackUrl=/run/:id/score')` |
-| `/run/:id/results` | Inline sign-in prompt — "Scored contact lists are private. Sign in to access your ranked results." Not a redirect. |
+Three-tier gate applied in every auth-required server component:
+
+| Page | No session | Session + "My Workspace" | Session + named workspace |
+|------|-----------|--------------------------|--------------------------|
+| `/` (upload + enrichment choice) | Public | Show normally | Show normally |
+| `/run/:id/score` | `redirect('/auth/signin?callbackUrl=/run/:id/score')` | `WorkspaceNamePrompt` overlay | Show page |
+| `/run/:id/results` | Inline sign-in prompt — not a redirect | `WorkspaceNamePrompt` overlay | Show page |
+| `/settings/*` | `redirect('/auth/signin')` | `WorkspaceNamePrompt` overlay | Show page |
+| `/onboarding` | `redirect('/auth/signin')` | Show standalone onboarding screen | `redirect('/')` |
+
+### Onboarding gate
+
+**Detection:** `session.user.orgName === "My Workspace"` — the default name set by the `signIn` callback during org auto-bootstrap.
+
+**Where applied:** Auth-required server components pass `show={session?.user?.orgName === "My Workspace"}` to `<WorkspaceNamePrompt email={session.user.email} show={...} />`. The component renders as a fixed full-screen overlay (`z-50`). On successful `PATCH /api/org`, it calls `router.refresh()` — the server component re-runs, the session callback fetches the updated `orgName` from DB, `show` becomes `false`, and the overlay unmounts. No navigation occurs; the user stays on their destination page. The standalone `/onboarding` page remains as a fallback for direct navigation.
+
+**`PATCH /api/org` — workspace name update:**
+- Auth required
+- Body: `{ name: string }`
+- Validates: non-empty, ≤ 80 chars
+- Updates `Organization.name` for `session.user.orgId`
+- Returns `200 { name }`
+
+**Session shape** — the JWT and session callbacks must expose `orgName`:
+```ts
+// JWT callback (load on sign-in):
+token.orgName = (await prisma.organization.findUnique({ where: { id: user.orgId } }))?.name
+
+// Session callback:
+session.user.orgName = token.orgName as string | undefined
+```
 
 ### Pre-enrichment notification (optional, non-blocking)
 
@@ -20,7 +46,14 @@ Enrichment of large contact lists can take several minutes. Users should not be 
 - On enrichment completion, if `Run.notifyEmail` is set and `EnrichmentNotification` row does not exist:
   - Call `sendEnrichmentComplete(email, runId)` — sends single-CTA sign-in email: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:runId/score`
   - Create `EnrichmentNotification { runId, email, sentAt: now() }` to prevent duplicate sends
-- `/auth/signin` is a server component: if session already exists, redirects to `callbackUrl` immediately without showing the form
+- Full sign-in flow: `/auth/signin` → user enters email → `SignInForm` wraps `callbackUrl` through `/auth/confirmed?next=<callbackUrl>` → magic link sent → user clicks → session created → `/auth/confirmed` shows confirmation (2.5s auto-redirect) → `next` destination
+- If already signed in when clicking notify-me email link: `/auth/signin` server component redirects directly to `callbackUrl`, bypassing the confirmation page
+
+### List models (`GET /api/models`)
+
+- If no session: return `{ models: [] }` immediately — no DB query, no orphan records exposed.
+- If session: return models scoped to `userId` only — never `userId: null` records.
+- `SavedModels` component checks `useSession()` before fetching: skips the request entirely when `status === 'unauthenticated'`; waits for `status === 'authenticated'` before calling the API. The section never renders for logged-out users.
 
 ### Save model (results page)
 
@@ -372,8 +405,6 @@ POST /api/webhooks/lemonsqueezy
     plan = lookup from variant ID in data.attributes.variant_id
     Upsert Organization { lsCustomerId, plan }
     Upsert Subscription { orgId, lsSubscriptionId, lsCustomerId, plan, status: 'active', currentPeriodEnd }
-    Reset Organization.contactsUsedThisMonth = 0
-    Set Organization.resetDate = now()
 
   'subscription_updated':
     Find Subscription by lsSubscriptionId

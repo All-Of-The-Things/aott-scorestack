@@ -1,0 +1,65 @@
+[
+  {
+    "id": "D-001",
+    "date": "2026-04-15",
+    "title": "DB migration strategy: prisma migrate deploy only",
+    "decision": "Remove prisma db push --accept-data-loss from the Vercel build command. Use only prisma migrate deploy in production.",
+    "rationale": "db push bypasses migration history, silently drops objects, and leaves the DB in a state that migrate deploy cannot reconcile. migrate deploy is idempotent, version-controlled, and fails fast on conflict.",
+    "outcome": "vercel.json build command: npx prisma generate && npx prisma migrate deploy && npm run build. Added db:* scripts to package.json for manual recovery.",
+    "files": ["vercel.json", "package.json", "ai/output/specs/architecture.md"]
+  },
+  {
+    "id": "D-002",
+    "date": "2026-04-16",
+    "title": "Session gate: blanket rule from score page onwards",
+    "decision": "Retired EmailGate and NotificationCheckGate soft-gate components. Session required from /run/:id/score onwards. No email-capture bypass paths.",
+    "rationale": "Multi-path gate logic was too complex and created inconsistent access patterns. Results contain enriched contact data and must always be private.",
+    "outcome": "Score page: redirect to /auth/signin. Results page: inline sign-in prompt (not a redirect). EmailGate and NotificationCheckGate marked retired in spec.",
+    "files": ["app/run/[runId]/score/page.tsx", "app/run/[runId]/results/page.tsx", "ai/output/specs/logic.md", "ai/output/specs/ui.md"]
+  },
+  {
+    "id": "D-003",
+    "date": "2026-04-16",
+    "title": "BYOK scope: enrichment always uses platform credentials",
+    "decision": "BYOK (user-provided LinkedAPI credentials) is required only for LinkedIn message delivery, not for enrichment. Enrichment always uses platform env vars.",
+    "rationale": "Spec was incorrectly framing BYOK as an enrichment requirement. Platform absorbs enrichment credential cost; users provide their own credentials only for delivery where LinkedIn rate limits make shared credentials unscalable.",
+    "outcome": "Spec corrected across product.md, logic.md, architecture.md, data-model.json. No code change needed — enrich route was already using platform credentials.",
+    "files": ["ai/output/specs/product.md", "ai/output/specs/logic.md", "ai/output/specs/architecture.md", "ai/output/specs/data-model.json"]
+  },
+  {
+    "id": "D-004",
+    "date": "2026-04-16",
+    "title": "Quota model: per-run cap (free) + credit balance (paid), no reset date",
+    "decision": "Free plan enforces a per-run hard cap of 50 contacts. Paid plans use a managedCreditsBalance that is decremented per contact enriched and topped up via credit pack purchases. No monthly rolling window, no resetDate field.",
+    "rationale": "A rolling monthly window requires a resetDate on Organization and a UsageLog sum query on every enrich request. The credit balance model is simpler, more predictable for users, and requires no scheduled reset logic.",
+    "outcome": "Removed contactsUsedThisMonth, resetDate from schema and spec. architecture.md Quota Middleware section and ui.md UsageBanner copy updated to reflect the actual model.",
+    "files": ["prisma/schema.prisma", "ai/output/specs/architecture.md", "ai/output/specs/ui.md", "ai/output/specs/data-model.json"]
+  },
+  {
+    "id": "D-005",
+    "date": "2026-04-17",
+    "title": "Onboarding gate: inline WorkspaceNamePrompt overlay, not a redirect",
+    "decision": "When session.user.orgName === 'My Workspace', render a WorkspaceNamePrompt fixed overlay on the current page rather than redirecting to /onboarding.",
+    "rationale": "Redirect chain (score → /onboarding → back to score) caused perceived performance decay and required callbackUrl threading. The overlay keeps the user on their destination page. router.refresh() after PATCH /api/org re-runs the server component, which fetches the updated orgName live from DB, and the overlay unmounts.",
+    "outcome": "WorkspaceNamePrompt component built. /onboarding page retained as fallback for direct navigation only. No redirect in score/results pages.",
+    "files": ["app/components/WorkspaceNamePrompt.tsx", "app/api/org/route.ts", "app/run/[runId]/score/page.tsx", "app/run/[runId]/results/page.tsx", "app/lib/auth.ts"]
+  },
+  {
+    "id": "D-006",
+    "date": "2026-04-17",
+    "title": "Post-login confirmation page at /auth/confirmed",
+    "decision": "SignInForm wraps the callbackUrl through /auth/confirmed?next=<original> before calling signIn(). After NextAuth creates the session, the user lands on a confirmation screen before being auto-redirected to their destination.",
+    "rationale": "Magic link auth gives no visual feedback between clicking the email link and arriving at the app. The confirmation page surfaces the authenticated state explicitly and bridges the perceived gap between email client and app.",
+    "outcome": "/auth/confirmed server component + ConfirmedClient (2.5s progress bar + router.push). Already-authenticated users on the sign-in page bypass confirmation (redirect directly to callbackUrl).",
+    "files": ["app/auth/confirmed/page.tsx", "app/auth/confirmed/ConfirmedClient.tsx", "app/auth/signin/SignInForm.tsx"]
+  },
+  {
+    "id": "D-007",
+    "date": "2026-04-17",
+    "title": "ScoringModel ownership: userId not orgId",
+    "decision": "ScoringModels are scoped to userId rather than orgId.",
+    "rationale": "No org management UI exists at this stage. Scoping to orgId would mean models are inaccessible until org bootstrap is confirmed working. userId scoping works immediately on sign-in.",
+    "outcome": "Migration 20260416175155_scoring_model_user_ownership adds user_id to scoring_models. POST /api/models and GET /api/models queries use userId.",
+    "files": ["prisma/migrations/20260416175155_scoring_model_user_ownership/migration.sql", "app/api/models/route.ts"]
+  }
+]
