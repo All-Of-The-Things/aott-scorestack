@@ -71,7 +71,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
       <main className="bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
 
-          <WorkflowStepper currentStep={2} />
+          <WorkflowStepper currentStep={2} runId={runId} />
 
           <h1 className="text-xl font-semibold text-gray-900 mb-6">
             Define scoring criteria

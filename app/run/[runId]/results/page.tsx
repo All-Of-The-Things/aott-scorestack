@@ -173,7 +173,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
 
           {justActivated && <ActivationBanner />}
 
-          <WorkflowStepper currentStep={3} />
+          <WorkflowStepper currentStep={3} runId={runId} />
 
           <h1 className="text-xl font-semibold text-gray-900 mb-6">Scored results</h1>
 
