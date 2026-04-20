@@ -13,12 +13,19 @@ interface SignInPageProps {
  * callbackUrl without showing the sign-in form.
  */
 export default async function SignInPage({ searchParams }: SignInPageProps) {
-  const callbackUrl = searchParams.callbackUrl ?? '/'
+  // The original destination the user was trying to reach
+  const destination = searchParams.callbackUrl ?? '/'
 
   const session = await auth()
+  // Already authenticated: skip the verified page and go straight to the destination
   if (session) {
-    redirect(callbackUrl)
+    redirect(destination)
   }
+
+  // After the magic link is clicked, NextAuth will redirect to this URL.
+  // Routing through /auth/verified gives the user an explicit sign-in confirmation
+  // before they land on the destination page.
+  const callbackUrl = `/auth/verified?next=${encodeURIComponent(destination)}`
 
   return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">

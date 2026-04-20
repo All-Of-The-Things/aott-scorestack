@@ -39,7 +39,7 @@ export default function SaveModelButton({ criteria, savedModelName, knownEmail }
       const result = await signIn('resend', {
         email: knownEmail,
         redirect: false,
-        callbackUrl: `${pathname}?activated=1`,
+        callbackUrl: `/auth/verified?next=${encodeURIComponent(pathname)}`,
       })
       if (result?.error) {
         console.error('[SaveModelButton] sign-in link failed:', result.error)
@@ -87,8 +87,7 @@ export default function SaveModelButton({ criteria, savedModelName, knownEmail }
 
       if (linkError) {
         // Sending failed — fall back to the sign-in page so the user isn't stuck
-        const activationCallbackUrl = `${pathname}?activated=1`
-        const signInUrl = `/auth/signin?callbackUrl=${encodeURIComponent(activationCallbackUrl)}`
+        const signInUrl = `/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`
         return (
           <a
             href={signInUrl}
@@ -118,8 +117,7 @@ export default function SaveModelButton({ criteria, savedModelName, knownEmail }
     }
 
     // Unknown email — link to sign-in page
-    const activationCallbackUrl = `${pathname}?activated=1`
-    const signInUrl = `/auth/signin?callbackUrl=${encodeURIComponent(activationCallbackUrl)}`
+    const signInUrl = `/auth/signin?callbackUrl=${encodeURIComponent(pathname)}`
     return (
       <a
         href={signInUrl}

@@ -1,20 +1,4 @@
-'use client'
-
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-
-// Shown on the results page when the user just clicked a magic link (?activated=1).
-// Cleans the URL param after mount so refreshes don't re-show the banner.
 export default function ActivationBanner() {
-  const router = useRouter()
-
-  useEffect(() => {
-    // Remove ?activated=1 from the URL without a full navigation
-    const url = new URL(window.location.href)
-    url.searchParams.delete('activated')
-    router.replace(url.pathname + (url.search ? url.search : ''), { scroll: false })
-  }, [router])
-
   return (
     <div className="mb-6 flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
       <svg

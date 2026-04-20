@@ -3,22 +3,23 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import Link from 'next/link'
 import UploadForm, { type ConfirmedUpload } from '@/app/components/UploadForm'
 import EnrichmentChoice from './components/EnrichmentChoice'
 import EnrichmentProgress from './components/EnrichmentProgress'
 import SavedModels from './components/SavedModels'
+import AppHeader from './components/AppHeader'
 
 export default function HomePage() {
   const router = useRouter()
   const { data: session, status } = useSession()
-  // stage controls which screen is shown after upload
   const [stage, setStage] = useState<'upload' | 'choose' | 'enriching'>('upload')
   const [confirmed, setConfirmed] = useState<ConfirmedUpload | null>(null)
   const [notifyEmail, setNotifyEmail] = useState<string | null>(null)
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
   const [scoring, setScoring] = useState(false)
+
+  const userEmail = status === 'authenticated' ? session.user.email : null
 
   const handleEnrichError = (message: string) => {
     setEnrichError(message)
@@ -29,7 +30,6 @@ export default function HomePage() {
   }
 
   const handleEnrichComplete = async (runId: string) => {
-    // If a saved model is selected, skip CriteriaBuilder and score directly
     if (selectedModel) {
       setScoring(true)
       try {
@@ -52,7 +52,6 @@ export default function HomePage() {
       return
     }
 
-    // Normal flow: go to CriteriaBuilder
     router.push(`/run/${runId}/score`)
   }
 
@@ -67,14 +66,17 @@ export default function HomePage() {
   // -- Pre-enrichment choice --------------------------------------------------
   if (stage === 'choose' && confirmed) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-lg">
-          <EnrichmentChoice
-            filename={confirmed.original_filename}
-            onStartNow={() => setStage('enriching')}
-            onNotifyMe={(email) => { setNotifyEmail(email); setStage('enriching') }}
-            initialEmail={session?.user?.email ?? undefined}
-          />
+      <main className="min-h-screen bg-gray-50">
+        <AppHeader userEmail={userEmail} />
+        <div className="flex items-center justify-center px-4 py-16">
+          <div className="w-full max-w-lg">
+            <EnrichmentChoice
+              filename={confirmed.original_filename}
+              onStartNow={() => setStage('enriching')}
+              onNotifyMe={(email) => { setNotifyEmail(email); setStage('enriching') }}
+              initialEmail={session?.user?.email ?? undefined}
+            />
+          </div>
         </div>
       </main>
     )
@@ -83,24 +85,27 @@ export default function HomePage() {
   // -- Enrichment in progress -------------------------------------------------
   if (stage === 'enriching' && confirmed) {
     return (
-      <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-md">
-          <EnrichmentProgress
-            blobUrl={confirmed.blob_url}
-            linkedinColumn={confirmed.linkedin_column}
-            originalFilename={confirmed.original_filename}
-            notifyEmail={notifyEmail ?? undefined}
-            onComplete={handleEnrichComplete}
-            onError={handleEnrichError}
-          />
-          {scoring && (
-            <div className="mt-4 text-center">
-              <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-xs text-gray-500">
-                Scoring with <span className="font-medium text-gray-700">{selectedModel?.name}</span>...
-              </p>
-            </div>
-          )}
+      <main className="min-h-screen bg-gray-50">
+        <AppHeader userEmail={userEmail} />
+        <div className="flex items-center justify-center px-4 py-16">
+          <div className="w-full max-w-md">
+            <EnrichmentProgress
+              blobUrl={confirmed.blob_url}
+              linkedinColumn={confirmed.linkedin_column}
+              originalFilename={confirmed.original_filename}
+              notifyEmail={notifyEmail ?? undefined}
+              onComplete={handleEnrichComplete}
+              onError={handleEnrichError}
+            />
+            {scoring && (
+              <div className="mt-4 text-center">
+                <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
+                <p className="text-xs text-gray-500">
+                  Scoring with <span className="font-medium text-gray-700">{selectedModel?.name}</span>...
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     )
@@ -109,24 +114,7 @@ export default function HomePage() {
   // -- Upload flow ------------------------------------------------------------
   return (
     <main className="min-h-screen bg-gray-50">
-      {/* Top nav — shows user email + sign out, or sign-in link */}
-      <nav className="border-b border-gray-100 bg-white">
-        <div className="max-w-4xl mx-auto px-4 h-12 flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-800">ScoreStack</span>
-          <div className="text-sm text-gray-500">
-            {status === 'authenticated' ? (
-              <span>{session.user.email}</span>
-            ) : (
-              <Link
-                href="/auth/signin"
-                className="text-blue-600 hover:underline font-medium"
-              >
-                Sign in
-              </Link>
-            )}
-          </div>
-        </div>
-      </nav>
+      <AppHeader userEmail={userEmail} />
 
       <div className="max-w-4xl mx-auto px-4 py-16 sm:py-24">
 

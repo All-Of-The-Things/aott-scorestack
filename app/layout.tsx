@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import Providers from './providers'
+import AppFooter from './components/AppFooter'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -17,8 +18,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased`}>
-        <Providers>{children}</Providers>
+      <body className={`${inter.className} antialiased flex flex-col min-h-screen`}>
+        <Providers>
+          <div className="flex-1">{children}</div>
+          <AppFooter />
+        </Providers>
       </body>
     </html>
   )
