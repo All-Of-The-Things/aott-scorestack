@@ -9,8 +9,10 @@ interface VerifiedPageProps {
 export default async function VerifiedPage({ searchParams }: VerifiedPageProps) {
   const session = await auth()
 
-  // Sanitize: `next` must be a local path to prevent open redirect
-  const next = searchParams.next?.startsWith('/') ? searchParams.next : '/'
+  // Sanitize: `next` must be a local path to prevent open redirect.
+  // Decode once in case NextAuth percent-encodes the callbackUrl value.
+  const rawNext = searchParams.next ? decodeURIComponent(searchParams.next) : ''
+  const next = rawNext.startsWith('/') ? rawNext : '/'
 
   if (!session) {
     redirect(`/auth/signin?callbackUrl=${encodeURIComponent(next)}`)

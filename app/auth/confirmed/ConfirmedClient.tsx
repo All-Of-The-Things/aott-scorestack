@@ -14,6 +14,8 @@ export default function ConfirmedClient({ email, next }: Props) {
   const router = useRouter()
 
   useEffect(() => {
+    // Clear the cookie now that we've consumed the destination.
+    document.cookie = 'auth_next=; path=/; max-age=0; SameSite=Lax'
     const t = setTimeout(() => router.push(next), REDIRECT_DELAY_MS)
     return () => clearTimeout(t)
   }, [next, router])

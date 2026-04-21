@@ -22,13 +22,15 @@ export default function SignInForm({ callbackUrl }: SignInFormProps) {
     setStep('submitting')
 
     try {
-      // Route through the confirmation page so the user sees a "signed in"
-      // banner before landing on their destination.
-      const confirmedUrl = `/auth/confirmed?next=${encodeURIComponent(callbackUrl)}`
+      // Store the destination in a short-lived cookie before triggering signIn.
+      // Passing it as a nested callbackUrl query param causes double-encoding
+      // issues with some NextAuth magic-link flows.
+      document.cookie = `auth_next=${encodeURIComponent(callbackUrl)}; path=/; max-age=600; SameSite=Lax`
+
       const result = await signIn('resend', {
-        email: email.trim(),
-        redirect: false,
-        callbackUrl: confirmedUrl,
+        email:       email.trim(),
+        redirect:    false,
+        callbackUrl: '/auth/confirmed',
       })
 
       if (result?.error) {

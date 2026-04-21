@@ -22,10 +22,10 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
     redirect(destination)
   }
 
-  // After the magic link is clicked, NextAuth will redirect to this URL.
-  // Routing through /auth/verified gives the user an explicit sign-in confirmation
-  // before they land on the destination page.
-  const callbackUrl = `/auth/verified?next=${encodeURIComponent(destination)}`
+  // SignInForm stores callbackUrl in the auth_next cookie and sends the magic
+  // link to /auth/confirmed (hard-coded). The confirmed page auto-redirects to
+  // the cookie value, so pass the raw destination — no /auth/verified wrapper.
+  const callbackUrl = destination
 
   return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
