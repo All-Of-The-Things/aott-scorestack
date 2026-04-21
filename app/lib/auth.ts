@@ -45,19 +45,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Re-read from DB rather than trusting the adapter's snapshot. The signIn
       // callback that bootstraps the org runs after the adapter reads the user,
       // so the snapshot's orgId is null on first sign-in.
-      const dbUser = await prisma.user.findUnique({
-        where:  { id: user.id },
-        select: { orgId: true, role: true },
-      });
-      const orgId = dbUser?.orgId ?? null;
+      let orgId: string | null = null;
+      let role: UserRole = "member";
+      try {
+        const dbUser = await prisma.user.findUnique({
+          where:  { id: user.id },
+          select: { orgId: true, role: true },
+        });
+        orgId = dbUser?.orgId ?? null;
+        role  = (dbUser?.role ?? "member") as UserRole;
+      } catch (err) {
+        console.error("[auth] session callback DB read failed (non-fatal):", err);
+      }
       return {
         ...session,
-        user: {
-          ...session.user,
-          id:   user.id,
-          orgId,
-          role: ((dbUser?.role ?? "member") as UserRole),
-        },
+        user: { ...session.user, id: user.id, orgId, role },
       };
     },
 
