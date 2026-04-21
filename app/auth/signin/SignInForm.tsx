@@ -27,10 +27,12 @@ export default function SignInForm({ callbackUrl }: SignInFormProps) {
       // issues with some NextAuth magic-link flows.
       document.cookie = `auth_next=${encodeURIComponent(callbackUrl)}; path=/; max-age=600; SameSite=Lax`
 
+      // Encode destination directly in the callbackUrl so it survives the magic
+      // link click even on a different device (cookie won't be present there).
       const result = await signIn('resend', {
         email:       email.trim(),
         redirect:    false,
-        callbackUrl: '/auth/confirmed',
+        callbackUrl: `/auth/confirmed?next=${encodeURIComponent(callbackUrl)}`,
       })
 
       if (result?.error) {
