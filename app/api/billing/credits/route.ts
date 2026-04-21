@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/app/lib/auth'
+import prisma from '@/app/lib/prisma'
 import { createCreditCheckout } from '@/app/lib/billing'
 
 const Schema = z.object({
@@ -18,8 +19,19 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
 
   try {
-    const checkout_url = await createCreditCheckout(orgId, parsed.data.packId)
-    return NextResponse.json({ checkout_url })
+    const checkout = await createCreditCheckout(orgId, parsed.data.packId)
+
+    await prisma.pendingCheckout.create({
+      data: {
+        orgId,
+        userId:       session.user.id,
+        lsCheckoutId: checkout.checkoutId,
+        variantId:    checkout.variantId,
+        credits:      checkout.credits,
+      },
+    })
+
+    return NextResponse.json({ checkout_url: checkout.url })
   } catch (err) {
     console.error('[billing/credits]', err)
     return NextResponse.json({ error: 'checkout_failed' }, { status: 502 })
