@@ -2,6 +2,12 @@ const LS_API = 'https://api.lemonsqueezy.com/v1'
 
 export type CreditPackId = 'credits_100' | 'credits_500' | 'credits_1500' | 'credits_5000'
 
+export type VariantDetails = {
+  name: string
+  price: number        // cents
+  interval: 'month' | 'year' | null
+}
+
 // Env var holds the LS *variant* ID for the one-time product, even though
 // the variable name says PRODUCT_ID (common LS naming convention).
 const CREDIT_PACK_CONFIGS: Record<CreditPackId, { credits: number; envVar: string }> = {
@@ -23,10 +29,65 @@ function appUrl() {
   return process.env.NEXTAUTH_URL ?? 'http://localhost:3000'
 }
 
+// ---------------------------------------------------------------------------
+// Variant / product data
+// ---------------------------------------------------------------------------
+
+// Cached for 1 hour at the fetch layer so repeated page loads don't hit LS.
+export async function fetchVariantDetails(variantId: string): Promise<VariantDetails> {
+  const res = await fetch(`${LS_API}/variants/${variantId}`, {
+    headers: lsHeaders(),
+    next: { revalidate: 3600 },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`LS variant fetch ${res.status}: ${text}`)
+  }
+  const json = await res.json()
+  const attrs = json.data.attributes
+  return {
+    name: attrs.name as string,
+    price: attrs.price as number,
+    interval: (attrs.interval ?? null) as 'month' | 'year' | null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Checkout retrieval (used by the confirmation page)
+// ---------------------------------------------------------------------------
+
+export type CheckoutDetails = {
+  variantId: string
+  expiresAt: string | null
+}
+
+export async function fetchCheckoutDetails(checkoutId: string): Promise<CheckoutDetails | null> {
+  const res = await fetch(`${LS_API}/checkouts/${checkoutId}`, {
+    headers: { Authorization: `Bearer ${process.env.LEMONSQUEEZY_API_KEY}`, Accept: 'application/vnd.api+json' },
+  })
+  if (!res.ok) return null
+  const json = await res.json()
+  const attrs = json.data.attributes
+  return {
+    variantId:  String(attrs.variant_id),
+    expiresAt:  attrs.expires_at ?? null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Checkout creation
+// ---------------------------------------------------------------------------
+
+export type CheckoutResult = {
+  url:         string
+  checkoutId:  string
+  variantId:   string
+}
+
 export async function createCheckout(
   orgId: string,
   plan: 'starter' | 'pro'
-): Promise<string> {
+): Promise<CheckoutResult> {
   const variantId =
     plan === 'starter'
       ? process.env.LEMONSQUEEZY_STARTER_VARIANT_ID
@@ -43,7 +104,7 @@ export async function createCheckout(
         attributes: {
           checkout_data: { custom: { orgId } },
           product_options: {
-            redirect_url: `${appUrl()}/settings/billing?success=1`,
+            redirect_url: `${appUrl()}/settings/billing/confirmation`,
           },
         },
         relationships: {
@@ -60,13 +121,19 @@ export async function createCheckout(
   }
 
   const json = await res.json()
-  return json.data.attributes.url as string
+  return {
+    url:        json.data.attributes.url as string,
+    checkoutId: json.data.id as string,
+    variantId,
+  }
 }
+
+export type CreditCheckoutResult = CheckoutResult & { credits: number }
 
 export async function createCreditCheckout(
   orgId: string,
   packId: CreditPackId
-): Promise<string> {
+): Promise<CreditCheckoutResult> {
   const config = CREDIT_PACK_CONFIGS[packId]
   const variantId = process.env[config.envVar]
   if (!variantId) throw new Error(`Missing LS variant ID for credit pack: ${packId}`)
@@ -82,7 +149,7 @@ export async function createCreditCheckout(
             custom: { orgId, credits: config.credits },
           },
           product_options: {
-            redirect_url: `${appUrl()}/settings/billing?success=1`,
+            redirect_url: `${appUrl()}/settings/billing/confirmation`,
           },
         },
         relationships: {
@@ -99,8 +166,17 @@ export async function createCreditCheckout(
   }
 
   const json = await res.json()
-  return json.data.attributes.url as string
+  return {
+    url:        json.data.attributes.url as string,
+    checkoutId: json.data.id as string,
+    variantId,
+    credits:    config.credits,
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Customer portal
+// ---------------------------------------------------------------------------
 
 // LS customer portal URL lives in GET /v1/customers/{id} → data.attributes.urls.customer_portal
 export async function createPortalUrl(lsCustomerId: string): Promise<string> {
@@ -116,6 +192,10 @@ export async function createPortalUrl(lsCustomerId: string): Promise<string> {
   const json = await res.json()
   return json.data.attributes.urls.customer_portal as string
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 // LS variant_id comes back as a number — convert to string before comparing env vars.
 export function getPlanFromVariantId(variantId: string | number): 'starter' | 'pro' | null {
