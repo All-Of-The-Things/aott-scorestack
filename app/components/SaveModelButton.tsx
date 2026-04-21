@@ -39,7 +39,7 @@ export default function SaveModelButton({ criteria, savedModelName, knownEmail }
       const result = await signIn('resend', {
         email: knownEmail,
         redirect: false,
-        callbackUrl: `/auth/verified?next=${encodeURIComponent(pathname)}`,
+        callbackUrl: `/auth/verified?next=${pathname}`,
       })
       if (result?.error) {
         console.error('[SaveModelButton] sign-in link failed:', result.error)
