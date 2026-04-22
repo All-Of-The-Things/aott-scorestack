@@ -119,26 +119,67 @@ Results page always has a session by design. `SaveModelButton` only renders in a
 ## 2. Enrichment Quota Enforcement
 
 ### Enrichment always uses platform credentials
-Enrichment calls always use the platform's LinkedAPI credentials from server env vars (`LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`). No per-org credential resolution is needed. BYOK is only required for LinkedIn message **delivery** (see §5a).
+Enrichment calls always use the platform's LinkedAPI credentials from server env vars (`LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`). No per-org credential resolution is needed for enrichment. BYOK is only required for LinkedIn message **delivery** (see §5a).
+
+### Quota constants (single source of truth: `app/lib/quota.ts`)
+
+```ts
+// Phase 4 — run + model limits
+export const PLAN_RUN_LIMITS: Record<string, number> = {
+  free:       50,   // hard cap per run
+  starter:    -1,   // unlimited
+  pro:        -1,   // unlimited
+  enterprise: -1,   // unlimited
+}
+
+export const PLAN_MODEL_LIMITS: Record<string, number> = {
+  free:       1,
+  starter:    5,
+  pro:        -1,
+  enterprise: -1,
+}
+
+// Phase 9 — seat limits (added when team management is implemented)
+// export const PLAN_SEAT_LIMITS: Record<string, number> = {
+//   free: 1, starter: 1, pro: 3, enterprise: -1,
+// }
+```
+
+`app/api/usage/route.ts` imports `PLAN_RUN_LIMITS` and `PLAN_MODEL_LIMITS` from `quota.ts`. `PLAN_SEAT_LIMITS` stays as a local constant in `usage/route.ts` until Phase 9 adds enforcement to the invite route.
 
 ### Enrichment quota decision tree
 
+`POST /api/enrich` streams SSE — the HTTP response body starts before the row count is known. The quota check therefore happens **inside the SSE stream handler**, after CSV parse and before enrichment begins. A quota violation sends an error event and closes the stream.
+
 ```
-POST /api/enrich
+POST /api/enrich  →  SSE stream opens immediately
   │
-  ├── 1. Get org from session (optional — anonymous runs are allowed)
+  ├── 1. Validate request body; create Run row; emit { type: 'started', run_id }
   │
-  ├── 2. Per-run hard cap check:
-  │       If org.plan === 'free' (or no session) AND incomingCount > 50:
-  │         return 402 { error: 'run_limit_exceeded', limit: 50 }
+  ├── 2. Fetch + parse CSV from Vercel Blob; update Run.totalContacts
   │
-  ├── 3. Future: managed credits deduction
-  │       If org has managedCreditsBalance configured and source = 'managed_credits':
-  │         Decrement org.managedCreditsBalance by incomingCount atomically
+  ├── 3. Quota check (before first enrichment call):
+  │       a. Call auth() — get session (may be null for anonymous runs)
+  │       b. plan = session?.user?.plan ?? 'free'
+  │       c. limit = PLAN_RUN_LIMITS[plan] ?? 50
+  │       d. If limit !== -1 AND rows.length > limit:
+  │            Update Run.status = 'failed'
+  │            Emit { type: 'error', code: 'quota_exceeded', limit, plan }
+  │            Close stream → return
   │
-  └── 4. Proceed with enrichment using platform credentials
-        └── On completion: INSERT UsageLog { orgId, runId, contactsConsumed, enrichmentSource: 'managed_credits' }
+  ├── 4. Enrich contacts sequentially (existing SSE progress logic)
+  │
+  └── 5. On completion:
+        a. Update Run.status = 'scoring', enrichedCount, failedCount
+        b. If session?.user?.orgId present:
+             INSERT UsageLog { orgId, runId: run.id, contactsConsumed: enrichedCount,
+                               enrichmentSource: 'managed_credits' }
+             (skip for anonymous runs — no orgId)
+        c. Send enrichment notification email if Run.notifyEmail set (existing logic)
+        d. Emit { type: 'complete', run_id }
 ```
+
+**Why SSE error instead of HTTP 402**: The stream response has already been initiated (headers sent) when the CSV is fetched. An HTTP-level 402 is only possible if the client passes `contact_count` in the request body as a pre-check. That is not the current contract. The client `EnrichmentProgress` component already handles `{ type: 'error' }` events — it should open `<UpgradeModal>` specifically when `code === 'quota_exceeded'`.
 
 ### Limits by plan
 

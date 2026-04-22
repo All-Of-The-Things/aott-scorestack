@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 03 — plan names hardcoded in app (not from LS); dynamic credit packs from single LEMONSQUEEZY_CREDITS_PRODUCT_ID product (ENABLE_CREDITS flag); portal "Soon" badge when lsCustomerId not yet set_
+_Last refined: SPEC::REFINE Phase 04 — quota check moved inside SSE stream; contacts-per-run limits corrected (paid = unlimited, not 500/2000); T-19 (usage route) already complete; UsageBanner is per-page, not global layout_
 
 ## Overview
 

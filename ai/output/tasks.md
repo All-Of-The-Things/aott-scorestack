@@ -2,7 +2,8 @@
 
 **Phase:** EXECUTION  
 **Command:** BUILD::IMPLEMENT  
-**Source specs:** `/ai/output/specs/`  
+**Source specs:** `/ai/output/specs/`
+**Last replanned:** PLAN::ARCHITECTURE Phase 04 — seat limits deferred to Phase 9 (T-44b); T-47 moved from Phase 10 → Phase 4; Phase 5 audited (T-21/T-22/T-24 already complete)  
 **Total tasks:** 49 across 10 phases
 
 Phases must be executed in order. Each phase's output is a hard dependency for the next.
@@ -137,72 +138,83 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-## Phase 4 — Quota + Usage
-**Goal:** Free-tier limits enforced at enrich time; usage visible in UI.
+## Phase 4 — Enrich Quota + Usage Display
+**Goal:** Free-tier contact cap enforced at enrichment time; quota status visible in UI. Seats are NOT in scope — seat limits belong in Phase 9 (Team Management) where the enforcement point (`POST /api/org/invite`) lives.
 
 - [ ] **T-17** Create `app/lib/quota.ts`
-  - `PLAN_LIMITS`: `{ free: 50, starter: 500, pro: 2000, enterprise: -1 }`
-  - `checkQuota(orgId, incomingCount)` → `{ allowed, used, limit, plan }`
-  - `recordUsage(orgId, runId, count)` → insert `UsageLog`
+  - Source of truth for run + model limit constants **only** — no seat limits (deferred to Phase 9)
+  - ```ts
+    export const PLAN_RUN_LIMITS: Record<string, number> = {
+      free: 50, starter: -1, pro: -1, enterprise: -1,
+    }
+    export const PLAN_MODEL_LIMITS: Record<string, number> = {
+      free: 1, starter: 5, pro: -1, enterprise: -1,
+    }
+    ```
+  - Update `app/api/usage/route.ts` to import `PLAN_RUN_LIMITS` and `PLAN_MODEL_LIMITS` from `quota.ts`; remove the duplicate local constant blocks
+  - Note: `usage/route.ts` already returns `seats`/`seatsLimit` (computed from `PLAN_SEAT_LIMITS` defined locally there). Leave those fields as-is — they are harmless and will be wired to enforcement in Phase 9. Do NOT add `PLAN_SEAT_LIMITS` to `quota.ts` yet.
 
 - [ ] **T-18** Update `app/api/enrich/route.ts`
-  - Start: `checkQuota(orgId, csvRowCount)` → 402 if exceeded
-  - Complete: `recordUsage(orgId, runId, enrichedCount)`
-  - 402 body: `{ error: 'quota_exceeded', used, limit, plan, upgrade_url }`
+  - Import `PLAN_RUN_LIMITS` from `quota.ts`
+  - Quota check runs **inside the SSE stream handler**, after CSV parse and before the first enrichment call:
+    ```ts
+    const session = await auth()
+    const plan = (session?.user?.plan ?? 'free') as string
+    const limit = PLAN_RUN_LIMITS[plan] ?? 50
+    if (limit !== -1 && rows.length > limit) {
+      await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
+      send({ type: 'error', code: 'quota_exceeded', limit, plan })
+      controller.close()
+      return
+    }
+    ```
+  - On completion: if `session?.user?.orgId` present, insert `UsageLog { orgId, runId, contactsConsumed: enrichedCount, enrichmentSource: 'managed_credits' }`. Skip for anonymous runs (no orgId).
+  - No HTTP 402 — quota violations are SSE `{ type: 'error', code: 'quota_exceeded', limit, plan }` because streaming has already started when the count is known
 
-- [x] **T-19** Create `app/api/usage/route.ts`
-  - `GET` → auth → query org:
-  ```ts
-  {
-    plan: Plan,
-    managedCreditsBalance: number,   // from Organization.managedCreditsBalance
-    contactsPerRunLimit: number,     // 50 for free; -1 for all paid plans (unlimited)
-    modelsUsed: number,              // count of ScoringModel where orgId = session.user.orgId
-    modelsLimit: number,             // 1 free | 5 starter | -1 pro/enterprise
-    seats: number,                   // count of User where orgId = session.user.orgId
-    seatsLimit: number               // 1 free/starter | 3 pro | -1 enterprise
-  }
-  ```
-  - No `contactsUsed`, no `resetDate` — quota is per-run cap (free) or credit balance (paid), neither resets monthly
-  - If `session.user.orgId` is null: return 503 `{ error: 'account_setup_incomplete' }`
+- [x] **T-19** `app/api/usage/route.ts` — **COMPLETE** (implemented in Phase 3)
+  - After T-17: import run + model constants from `quota.ts`; local `PLAN_SEAT_LIMITS` stays until Phase 9
 
 - [ ] **T-20** Create `app/components/UsageBanner.tsx`
-  - Fetch `/api/usage`
-  - **Free plan:** Text only — "Free plan · 50 contacts per run" + "Upgrade →" link. No progress bar.
-  - **Starter / Pro:** Progress bar showing `managedCreditsBalance` credits remaining.
-    - Green if > 200 credits, amber if 51–200, red if ≤ 50
+  - Client component (`'use client'`); calls `GET /api/usage` via `useState + useEffect`
+  - Skip render entirely when `useSession().status !== 'authenticated'`
+  - **Free plan:** Text pill — "Free plan · 50 contacts per run" + "Upgrade →" link to `/settings/billing`. No progress bar.
+  - **Starter / Pro:** Compact credit balance bar:
     - Label: "{balance} enrichment credits remaining"
-    - "Buy more →" link → `/settings/billing`
-  - **Enterprise:** Hidden entirely
-  - Skip render when `status !== 'authenticated'` (useSession)
+    - Bar color: green > 200, amber 51–200, red ≤ 50
+    - "Buy more →" link to `/settings/billing`
+  - **Enterprise:** return null
+  - Placement: included by individual pages below `<AppHeader />` (not in `app/layout.tsx` — no session context there). Include on: `/`, `/run/[runId]/score`, `/run/[runId]/results`
+
+- [ ] **T-47** (moved from Phase 10) Update `app/components/EnrichmentProgress.tsx`
+  - Handle SSE `{ type: 'error', code: 'quota_exceeded' }` distinctly from generic errors
+  - Instead of the generic error panel, open `<UpgradeModal trigger="You've reached your 50-contact limit" requiredPlan="starter" />`
+  - Generic `{ type: 'error' }` (no code or different code) still renders the existing error panel
+  - This completes the quota story end-to-end within Phase 4
 
 ---
 
-## Phase 5 — Deferred Enrichment
-**Goal:** Users can navigate away during enrichment and return or be notified when done.
+## Phase 5 — Deferred Enrichment (complete remaining tasks only)
+**Goal:** Users can navigate away and return to a run that's still enriching. T-21, T-22, and T-24 are already implemented — only T-23 and T-25 remain.
 
-- [ ] **T-21** Create `app/lib/notify.ts`
-  - `sendEnrichmentComplete(email, runId)` → Resend email
-  - Subject: "Your Scorestack run is ready"
-  - Body: link to `/run/:runId/score`
+- [x] **T-21** `app/lib/notify.ts` — **COMPLETE**
+  - `sendEnrichmentComplete(email, runId)` sends magic-link "results ready" email via Resend
 
-- [ ] **T-22** Update `app/api/enrich/route.ts` (deferred path)
-  - Accept `notify_email` in request body
-  - Store in `Run.notifyEmail` at run creation
-  - On completion: if `notifyEmail` set and `EnrichmentNotification.sentAt` null → `sendEnrichmentComplete()`, set `sentAt`
+- [x] **T-22** `app/api/enrich/route.ts` notify_email handling — **COMPLETE**
+  - Accepts `notify_email` in body; stores in `Run.notifyEmail`; sends completion email + creates `EnrichmentNotification` on finish
 
 - [ ] **T-23** Create `app/api/runs/[runId]/status/route.ts`
-  - `GET` → `{ status, enrichedCount, failedCount, totalContacts, completedAt }`
-  - No auth required
+  - `GET` → no auth required
+  - Returns `{ status, enrichedCount, failedCount, totalContacts, completedAt }`
+  - Used by the score page when a run is still in progress on load
 
-- [ ] **T-24** Update `app/components/EnrichmentProgress.tsx`
-  - After upload confirmed: show "Wait here" / "Notify me" choice
-  - "Notify me": email input (pre-filled from session) → pass `notify_email` to enrich request → confirmation banner → unblock navigation
+- [x] **T-24** `app/components/EnrichmentProgress.tsx` notify-me UX — **COMPLETE**
+  - `notifyEmail` prop; shows "We'll email {email} when results are ready. You can safely close this tab." during enrichment
 
 - [ ] **T-25** Update `app/run/[runId]/score/page.tsx`
-  - If `status === 'enriching'` on load: show spinner, poll `/api/runs/:runId/status` every 5s
-  - On `status === 'complete'`: render criteria builder
-  - On `status === 'failed'`: show error state
+  - Currently: assumes run is ready (fetches results immediately)
+  - Add: if `run.status === 'enriching'`, render a `<EnrichingWait runId={runId} />` client component instead of the criteria builder
+  - `EnrichingWait` polls `GET /api/runs/:runId/status` every 5s; on `status === 'scoring'` or `'complete'`: `router.refresh()` to re-render the server component with results
+  - On `status === 'failed'`: show error state with "Start over" link to `/`
 
 ---
 
@@ -332,25 +344,29 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - Seat counter "X / Y seats used"
   - Invite form (email + role) — locked on Free/Starter with `<UpgradeModal />`
 
+- [ ] **T-44b** Add seat limits to `app/lib/quota.ts` and wire enforcement
+  - Add `export const PLAN_SEAT_LIMITS: Record<string, number> = { free: 1, starter: 1, pro: 3, enterprise: -1 }`
+  - Update `app/api/usage/route.ts` to import `PLAN_SEAT_LIMITS` from `quota.ts` (remove local copy)
+  - `POST /api/org/invite`: count `prisma.user.count({ where: { orgId } })` → 409 `{ error: 'seat_limit_reached', limit }` if at limit
+
 ---
 
 ## Phase 10 — Gates, Limits, Polish
 **Goal:** All limits enforced; all queries org-scoped.
+**Note:** T-47 moved to Phase 4 (completes the quota story there). Phase 9 adds `PLAN_SEAT_LIMITS` to `quota.ts` and seat enforcement to invite route.
 
 - [ ] **T-45** Update `app/api/models/route.ts`
-  - `POST`: count org models → 409 if at plan limit
+  - Import `PLAN_MODEL_LIMITS` from `quota.ts`
+  - `POST`: count org models → 409 `{ error: 'model_limit_reached', limit, plan }` if at plan limit
 
 - [ ] **T-46** Update `app/components/SaveModelButton.tsx`
   - On 409: open `<UpgradeModal trigger="You've reached your model limit" requiredPlan="starter" />`
-
-- [ ] **T-47** Update upload/enrich UI
-  - On 402 from `/api/enrich`: open `<UpgradeModal trigger="You've reached your contact limit" requiredPlan="starter" />`
 
 - [ ] **T-48** Scope existing queries to `orgId`
   - `app/api/models/route.ts` — filter by `orgId`
   - `app/api/score/route.ts` — verify run belongs to org
   - `app/api/suggest/route.ts` — verify run belongs to org
-  - `app/api/enrich/route.ts` — attach `userId` + `orgId` to run on creation
+  - `app/api/enrich/route.ts` — attach `userId` + `orgId` to run on creation (T-18 adds `userId` via session; add `orgId` in same change)
 
 - [ ] **T-49** Verify billing success redirect
   - Confirm `/settings/billing?success=1` optimistic plan display resolves correctly after LS webhook fires
