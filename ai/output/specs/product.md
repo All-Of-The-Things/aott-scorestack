@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 4 post-deploy fixes — cross-device auth redirect (destination in callbackUrl URL param + cookie fallback), fault-tolerant session callback, appUrl() env-var chain, root error boundary + not-found page_
+_Last refined: SPEC::REFINE Phase 03 — plan in session (orgId+role+plan fetched in one DB join), AppHeader plan badge + hover/click dropdown, fetchVariantDetails uses product name via ?include=product (fixes LS "Default" variant name)_
 
 ## Overview
 

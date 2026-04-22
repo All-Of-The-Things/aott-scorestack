@@ -81,7 +81,7 @@ The workspace naming concept has been removed. There is no onboarding step.
 
 **Auth state — logged in:**
 - Add persistent **usage banner** (see component below)
-- Add user avatar / email + dropdown in nav (sign out, settings)
+- Add user email + plan badge + dropdown in nav (plan settings, sign out)
 - Existing upload form + saved models sidebar remain
 
 ---
@@ -340,10 +340,14 @@ Add a tab bar below the run summary:
 
 ```
 Top nav (authenticated):
-  [Logo]  [Usage banner]  [Settings ▼]  [User avatar ▼]
-                                          └─ Billing
-                                          └─ Team
-                                          └─ Sign out
+  [Logo]  [model pill?]  [email  Plan-badge ▼]
+                                └─ {email}  [Plan-badge]    ← header row
+                                └─ Plan settings → /settings/billing
+                                └─ Sign out
+
+Dropdown behaviour:
+  - Desktop: opens on mouseenter, closes on mouseleave (hover)
+  - Mobile: opens/closes on click (onClick toggle); closes on click-outside (mousedown listener)
 
 Main flows:
   /                     Home (upload + models)
@@ -369,6 +373,7 @@ Error pages (app router root):
 
 | Component | File | Status |
 |-----------|------|--------|
+| AppHeader | `app/components/AppHeader.tsx` | ✅ Built — `plan` prop, plan badge, hover+click dropdown (Plan settings / Sign out) |
 | EnrichmentChoice | `app/components/EnrichmentChoice.tsx` | ✅ Built — pre-enrichment two-path screen |
 | EnrichmentProgress | `app/components/EnrichmentProgress.tsx` | ✅ Built — `notifyEmail` prop, confirmation banner |
 | EmailGate | `app/components/EmailGate.tsx` | ⚠️ Retired — soft email gate replaced by session requirement |

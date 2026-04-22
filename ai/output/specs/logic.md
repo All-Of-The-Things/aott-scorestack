@@ -30,6 +30,7 @@ session.user = {
   email: string | null
   orgId: string | null   // null only on first sign-in race; billing page handles this
   role:  'admin' | 'member'
+  plan:  'free' | 'starter' | 'pro' | 'enterprise'  // defaults to 'free' if no org or DB error
 }
 // orgName is NOT exposed in the session
 ```
@@ -48,7 +49,16 @@ If already authenticated when reaching `/auth/signin`: server component `redirec
 
 ### Session callback resilience
 
-The `session` callback in `auth.ts` wraps its `prisma.user.findUnique` call in a `try/catch`. On DB failure it returns the session with `orgId: null` and `role: 'member'` rather than propagating the exception. This prevents a cold-start DB hiccup from crashing any page that calls `auth()` and producing a Vercel NOT_FOUND.
+The `session` callback in `auth.ts` wraps its `prisma.user.findUnique` call in a `try/catch`. On DB failure it returns the session with `orgId: null`, `role: 'member'`, and `plan: 'free'` rather than propagating the exception. This prevents a cold-start DB hiccup from crashing any page that calls `auth()` and producing a Vercel NOT_FOUND.
+
+The query joins the org relation in a single round-trip:
+```ts
+prisma.user.findUnique({
+  where:  { id: user.id },
+  select: { orgId: true, role: true, org: { select: { plan: true } } },
+})
+```
+`plan` is read from `dbUser.org.plan` (defaults to `'free'` if no org).
 
 ### Pre-enrichment notification (optional, non-blocking)
 
@@ -381,6 +391,18 @@ Lemon Squeezy acts as **Merchant of Record** — they collect payments from cust
 
 - `LEMONSQUEEZY_STARTER_VARIANT_ID` → $29/mo recurring variant
 - `LEMONSQUEEZY_PRO_VARIANT_ID` → $49/mo recurring variant
+
+### Variant name resolution
+
+LS sets the variant name to `"Default"` on new products. `fetchVariantDetails` fetches with `?include=product` so it can use the **product** name (e.g. `"Starter"`, `"Pro"`) rather than the variant name. Falls back to `attrs.name` if the product relationship is not in the response.
+
+```ts
+GET /v1/variants/:id?include=product
+→ product = json.included?.find(r => r.type === 'products')
+→ name = product?.attributes?.name ?? attrs.name
+```
+
+This affects all plan name display in `BillingCTAs` (plan selector cards, upgrade button copy) and the billing page plan price data. The `AppHeader` plan badge uses the DB enum value mapped via `PLAN_LABEL` (`free → "Free"`, `starter → "Starter"`, etc.) and is unaffected.
 
 ### PendingCheckout pattern
 
