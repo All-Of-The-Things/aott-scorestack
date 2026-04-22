@@ -286,7 +286,8 @@ Add a tab bar below the run summary:
 - **Starter / Pro plan:** Credit balance bar — "{managedCreditsBalance} enrichment credits remaining" + "Buy more credits →" (opens credit pack selector). Thresholds: green > 200, amber 51–200, red ≤ 50.
 - **Enterprise:** No credit bar
 - "Upgrade" / "Change plan" CTA → Lemon Squeezy hosted checkout
-- "Manage invoices & payment methods" → Lemon Squeezy Customer Portal
+- "Manage invoices & payment methods" → Lemon Squeezy Customer Portal. Shown as an active button when `lsCustomerId` is set; shown as a dashed disabled row with a "Soon" badge when `lsCustomerId` is null (brief window before `subscription_created` webhook fires).
+- Credit packs section: hidden unless `ENABLE_CREDITS=true`. When enabled, renders pack buttons dynamically from `fetchCreditPacks()` — name and price come from LS variants of `LEMONSQUEEZY_CREDITS_PRODUCT_ID`. Variant naming convention: `"N Credits"` (leading number = credit count).
 - Subscription status badge (active / trialing / past_due)
 - Renewal date (from `Subscription.currentPeriodEnd`; hidden on Free)
 
@@ -384,7 +385,7 @@ Error pages (app router root):
 | ActivationBanner | `app/components/ActivationBanner.tsx` | ✅ Built — shown on `?activated=1`, cleans URL |
 | UsageBanner | `app/components/UsageBanner.tsx` | Not started |
 | UpgradeModal | `app/components/UpgradeModal.tsx` | ✅ Built — plan comparison table + checkout CTA |
-| BillingCTAs | `app/settings/billing/BillingCTAs.tsx` | ✅ Built — plan selector, portal link, credit packs |
+| BillingCTAs | `app/settings/billing/BillingCTAs.tsx` | ✅ Built — plan selector, portal link (+ "Soon" state), dynamic credit packs via `creditPacks` prop (feature-flagged) |
 | ExportButton | `app/components/ExportButton.tsx` | Not started |
 | MessagesTab | `app/components/MessagesTab.tsx` | Not started |
 | MessageTemplateModal | `app/components/MessageTemplateModal.tsx` | Not started |

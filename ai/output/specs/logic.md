@@ -202,12 +202,29 @@ function resolveLinkedApiClient(org) {
 
 ## 2b. Managed Credit Pack Purchase Flow
 
+Credit packs are **feature-flagged** (`ENABLE_CREDITS=true`) and **fully dynamic** — pack options are fetched from a single Lemon Squeezy product whose variants each represent one pack size.
+
+### Credit pack discovery
+
+`fetchCreditPacks()` in `billing.ts`:
+- Reads `LEMONSQUEEZY_CREDITS_PRODUCT_ID` (LS product ID). Returns `[]` if unset.
+- `GET /v1/variants?filter[product_id]=:id&sort=sort` — fetches all variants sorted by LS `sort` field.
+- Filters to `status === 'published'`.
+- Parses `credits` from variant name via `parseInt(attrs.name)` — convention: variant name must start with a number (e.g. `"100 Credits"` → 100). Variants where `parseInt` returns `NaN` or 0 are skipped.
+- Returns `CreditPack[]`: `{ variantId, credits, price (cents), name }`.
+- Cached 1 hour via Next.js `revalidate`.
+
+**Feature flag**: `BillingPage` checks `process.env.ENABLE_CREDITS === 'true'`. If false, passes `creditPacks={null}` to `BillingCTAs`, which hides the section entirely.
+
+### Purchase flow
+
 ```
-User clicks "Buy credits" → selects pack size
+User clicks credit pack button (name + price from LS)
   │
-  └── POST /api/billing/credits { packId }
-        └── Look up pack config (credits, lsProductId)
-        └── Create LS checkout for one-time product with custom_data.orgId + custom_data.credits
+  └── POST /api/billing/credits { variantId, credits }
+        └── createCreditCheckout(orgId, variantId, credits)
+        └── Create LS checkout with custom_data: { orgId, credits }
+        └── INSERT PendingCheckout { orgId, userId, lsCheckoutId, variantId, credits }
         └── Return { checkout_url }
 
 User completes payment on LS-hosted page
@@ -387,22 +404,20 @@ Lemon Squeezy acts as **Merchant of Record** — they collect payments from cust
 
 **v1–v2 only.** Migration to a more scalable processor (Stripe or Paddle) is planned for v3. Keep billing logic isolated in `app/lib/billing.ts` to make the swap low-friction.
 
-### Variant IDs (configured via env vars)
+### Env vars (billing)
 
-- `LEMONSQUEEZY_STARTER_VARIANT_ID` → $29/mo recurring variant
-- `LEMONSQUEEZY_PRO_VARIANT_ID` → $49/mo recurring variant
+| Variable | Purpose |
+|----------|---------|
+| `LEMONSQUEEZY_STARTER_VARIANT_ID` | $29/mo recurring variant ID |
+| `LEMONSQUEEZY_PRO_VARIANT_ID` | $49/mo recurring variant ID |
+| `LEMONSQUEEZY_CREDITS_PRODUCT_ID` | LS product ID whose variants are credit packs (dynamic) |
+| `ENABLE_CREDITS` | Set to `"true"` to show the credits section; unset hides it |
 
-### Variant name resolution
+### Plan name strategy
 
-LS sets the variant name to `"Default"` on new products. `fetchVariantDetails` fetches with `?include=product` so it can use the **product** name (e.g. `"Starter"`, `"Pro"`) rather than the variant name. Falls back to `attrs.name` if the product relationship is not in the response.
+Plan names ("Free", "Starter", "Pro", "Enterprise") are defined in the app code, not pulled from LS. `fetchVariantDetails` returns only `price` and `interval` — the name for a given DB plan enum value is resolved via the `PLAN_LABEL` map wherever a display name is needed. This avoids the LS default variant name `"Default"` leaking into the UI.
 
-```ts
-GET /v1/variants/:id?include=product
-→ product = json.included?.find(r => r.type === 'products')
-→ name = product?.attributes?.name ?? attrs.name
-```
-
-This affects all plan name display in `BillingCTAs` (plan selector cards, upgrade button copy) and the billing page plan price data. The `AppHeader` plan badge uses the DB enum value mapped via `PLAN_LABEL` (`free → "Free"`, `starter → "Starter"`, etc.) and is unaffected.
+Credit pack names DO come from LS (`CreditPack.name = attrs.name` from the variant). Convention: variant names must start with the credit count as a number (e.g. `"100 Credits"`).
 
 ### PendingCheckout pattern
 

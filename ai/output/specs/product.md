@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 03 — plan in session (orgId+role+plan fetched in one DB join), AppHeader plan badge + hover/click dropdown, fetchVariantDetails uses product name via ?include=product (fixes LS "Default" variant name)_
+_Last refined: SPEC::REFINE Phase 03 — plan names hardcoded in app (not from LS); dynamic credit packs from single LEMONSQUEEZY_CREDITS_PRODUCT_ID product (ENABLE_CREDITS flag); portal "Soon" badge when lsCustomerId not yet set_
 
 ## Overview
 
