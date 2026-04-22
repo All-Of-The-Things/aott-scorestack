@@ -24,8 +24,8 @@ const PLAN_PRICE: Record<string, string> = {
 }
 
 const FALLBACK_PLAN_PRICES = {
-  starter: { price: '$29', period: '/mo', name: 'Starter' },
-  pro:     { price: '$49', period: '/mo', name: 'Pro'     },
+  starter: { price: '$29', period: '/mo' },
+  pro:     { price: '$49', period: '/mo' },
 }
 
 // ---------------------------------------------------------------------------
@@ -71,13 +71,12 @@ async function fetchPlanPrices() {
   ])
 
   function fmt(
-    r: PromiseSettledResult<{ name: string; price: number; interval: 'month' | 'year' | null }>,
+    r: PromiseSettledResult<{ price: number; interval: 'month' | 'year' | null }>,
     fallback: typeof FALLBACK_PLAN_PRICES.starter,
   ) {
     if (r.status !== 'fulfilled') return fallback
     const v = r.value
     return {
-      name:   v.name,
       price:  `$${Math.round(v.price / 100)}`,
       period: v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : '',
     }

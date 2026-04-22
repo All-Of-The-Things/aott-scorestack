@@ -5,13 +5,12 @@ import { fetchVariantDetails } from '@/app/lib/billing'
 export const revalidate = 3600
 
 const FALLBACK = {
-  starter: { price: '$29', period: '/mo', name: 'Starter' },
-  pro:     { price: '$49', period: '/mo', name: 'Pro'     },
+  starter: { price: '$29', period: '/mo' },
+  pro:     { price: '$49', period: '/mo' },
 }
 
-function variantToDisplay(v: { name: string; price: number; interval: 'month' | 'year' | null }) {
+function variantToDisplay(v: { price: number; interval: 'month' | 'year' | null }) {
   return {
-    name:   v.name,
     price:  `$${Math.round(v.price / 100)}`,
     period: v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : '',
   }

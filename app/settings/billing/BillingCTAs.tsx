@@ -43,8 +43,7 @@ function userMessage(code: string, status: number): string {
 // ---------------------------------------------------------------------------
 
 interface PlanPrice {
-  name: string
-  price: string
+  price:  string
   period: string
 }
 
@@ -60,9 +59,9 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
     currentPlan === 'starter' || currentPlan === 'pro' ? currentPlan : 'free'
 
   const PLANS = [
-    { id: 'free' as const,    name: 'Free',                  price: '$0',                   period: 'forever', highlights: PLAN_HIGHLIGHTS.free    },
-    { id: 'starter' as const, name: planPrices.starter.name, price: planPrices.starter.price, period: planPrices.starter.period, highlights: PLAN_HIGHLIGHTS.starter },
-    { id: 'pro' as const,     name: planPrices.pro.name,     price: planPrices.pro.price,     period: planPrices.pro.period,     highlights: PLAN_HIGHLIGHTS.pro     },
+    { id: 'free'    as const, name: 'Free',    price: '$0',                     period: 'forever',                highlights: PLAN_HIGHLIGHTS.free    },
+    { id: 'starter' as const, name: 'Starter', price: planPrices.starter.price, period: planPrices.starter.period, highlights: PLAN_HIGHLIGHTS.starter },
+    { id: 'pro'     as const, name: 'Pro',     price: planPrices.pro.price,     period: planPrices.pro.period,     highlights: PLAN_HIGHLIGHTS.pro     },
   ]
 
   const [selected, setSelected] = useState<SelectablePlan>(normalised)
