@@ -5,7 +5,8 @@ import prisma from '@/app/lib/prisma'
 import { createCreditCheckout } from '@/app/lib/billing'
 
 const Schema = z.object({
-  packId: z.enum(['credits_100', 'credits_500', 'credits_1500', 'credits_5000']),
+  variantId: z.string().min(1),
+  credits:   z.number().int().positive(),
 })
 
 export async function POST(req: Request) {
@@ -18,8 +19,10 @@ export async function POST(req: Request) {
   const parsed = Schema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
 
+  const { variantId, credits } = parsed.data
+
   try {
-    const checkout = await createCreditCheckout(orgId, parsed.data.packId)
+    const checkout = await createCreditCheckout(orgId, variantId, credits)
 
     await prisma.pendingCheckout.create({
       data: {
@@ -27,7 +30,7 @@ export async function POST(req: Request) {
         userId:       session.user.id,
         lsCheckoutId: checkout.checkoutId,
         variantId:    checkout.variantId,
-        credits:      checkout.credits,
+        credits,
       },
     })
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { CreditPackId } from '@/app/lib/billing'
+import type { CreditPack } from '@/app/lib/billing'
 
 // ---------------------------------------------------------------------------
 // Types + constants
@@ -17,12 +17,6 @@ const PLAN_HIGHLIGHTS: Record<SelectablePlan, string[]> = {
   pro:     ['Everything in Starter', 'Custom AI templates', 'LinkedIn delivery', '3 team seats'],
 }
 
-const CREDIT_PACKS: { packId: CreditPackId; credits: number; price: string }[] = [
-  { packId: 'credits_100',  credits: 100,  price: '$6'   },
-  { packId: 'credits_500',  credits: 500,  price: '$25'  },
-  { packId: 'credits_1500', credits: 1500, price: '$60'  },
-  { packId: 'credits_5000', credits: 5000, price: '$175' },
-]
 
 // ---------------------------------------------------------------------------
 // Error helper — friendly copy for users, raw detail to console
@@ -48,13 +42,14 @@ interface PlanPrice {
 }
 
 interface Props {
-  currentPlan: string
-  lsCustomerId: string | null
+  currentPlan:    string
+  lsCustomerId:   string | null
   creditsBalance: number
-  planPrices: { starter: PlanPrice; pro: PlanPrice }
+  planPrices:     { starter: PlanPrice; pro: PlanPrice }
+  creditPacks:    CreditPack[] | null
 }
 
-export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance, planPrices }: Props) {
+export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance, planPrices, creditPacks }: Props) {
   const normalised: SelectablePlan =
     currentPlan === 'starter' || currentPlan === 'pro' ? currentPlan : 'free'
 
@@ -130,18 +125,18 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
     }
   }
 
-  async function doBuyCredits(packId: CreditPackId) {
-    setLoading(packId)
+  async function doBuyCredits(variantId: string, credits: number) {
+    setLoading(variantId)
     setError(null)
     try {
       const res  = await fetch('/api/billing/credits', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ packId }),
+        body:    JSON.stringify({ variantId, credits }),
       })
       const data = await res.json()
       if (!res.ok) {
-        console.error('[billing/credits]', { packId, status: res.status, body: data })
+        console.error('[billing/credits]', { variantId, status: res.status, body: data })
         setError(userMessage(data.error, res.status))
         return
       }
@@ -268,15 +263,16 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
               {loading === 'portal' ? 'Opening…' : 'Manage invoices & payment'}
             </button>
           ) : (
-            <p className="text-xs text-gray-400 text-center">
-              Billing portal loading — refresh in a moment or contact support.
-            </p>
+            <div className="w-full py-2 flex items-center justify-between px-3 border border-dashed border-gray-200 rounded-xl">
+              <span className="text-sm text-gray-400">Manage invoices &amp; payment</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">Soon</span>
+            </div>
           )}
         </div>
       )}
 
-      {/* ── Enrichment credits (paid plans) ──────────────────────────────── */}
-      {isPaid && (
+      {/* ── Enrichment credits (paid plans, feature-flagged) ─────────────── */}
+      {isPaid && creditPacks !== null && creditPacks.length > 0 && (
         <div className="pt-4 border-t border-gray-100 space-y-3">
           <div className="flex items-baseline justify-between">
             <p className="text-xs font-medium text-gray-500">Enrichment credits</p>
@@ -305,17 +301,17 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
 
           <p className="text-xs font-medium text-gray-500">Buy more credits</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {CREDIT_PACKS.map((pack) => (
+            {creditPacks.map((pack) => (
               <button
-                key={pack.packId}
-                onClick={() => doBuyCredits(pack.packId)}
+                key={pack.variantId}
+                onClick={() => doBuyCredits(pack.variantId, pack.credits)}
                 disabled={!!loading}
                 className="text-left p-3 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50 transition-colors group"
               >
                 <p className="text-xs font-semibold text-gray-800 group-hover:text-blue-700">
-                  {loading === pack.packId ? '…' : `${pack.credits.toLocaleString()} cr`}
+                  {loading === pack.variantId ? '…' : pack.name}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">{pack.price}</p>
+                <p className="text-xs text-gray-400 mt-0.5">${Math.round(pack.price / 100)}</p>
               </button>
             ))}
           </div>

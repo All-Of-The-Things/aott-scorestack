@@ -1,19 +1,15 @@
 const LS_API = 'https://api.lemonsqueezy.com/v1'
 
-export type CreditPackId = 'credits_100' | 'credits_500' | 'credits_1500' | 'credits_5000'
-
 export type VariantDetails = {
   price:    number        // cents
   interval: 'month' | 'year' | null
 }
 
-// Env var holds the LS *variant* ID for the one-time product, even though
-// the variable name says PRODUCT_ID (common LS naming convention).
-const CREDIT_PACK_CONFIGS: Record<CreditPackId, { credits: number; envVar: string }> = {
-  credits_100:  { credits: 100,  envVar: 'LEMONSQUEEZY_CREDITS_100_PRODUCT_ID'  },
-  credits_500:  { credits: 500,  envVar: 'LEMONSQUEEZY_CREDITS_500_PRODUCT_ID'  },
-  credits_1500: { credits: 1500, envVar: 'LEMONSQUEEZY_CREDITS_1500_PRODUCT_ID' },
-  credits_5000: { credits: 5000, envVar: 'LEMONSQUEEZY_CREDITS_5000_PRODUCT_ID' },
+export type CreditPack = {
+  variantId: string
+  credits:   number
+  price:     number   // cents
+  name:      string
 }
 
 function lsHeaders() {
@@ -128,16 +124,11 @@ export async function createCheckout(
   }
 }
 
-export type CreditCheckoutResult = CheckoutResult & { credits: number }
-
 export async function createCreditCheckout(
   orgId: string,
-  packId: CreditPackId
-): Promise<CreditCheckoutResult> {
-  const config = CREDIT_PACK_CONFIGS[packId]
-  const variantId = process.env[config.envVar]
-  if (!variantId) throw new Error(`Missing LS variant ID for credit pack: ${packId}`)
-
+  variantId: string,
+  credits: number,
+): Promise<CheckoutResult> {
   const res = await fetch(`${LS_API}/checkouts`, {
     method: 'POST',
     headers: lsHeaders(),
@@ -146,7 +137,7 @@ export async function createCreditCheckout(
         type: 'checkouts',
         attributes: {
           checkout_data: {
-            custom: { orgId, credits: config.credits },
+            custom: { orgId, credits },
           },
           product_options: {
             redirect_url: `${appUrl()}/settings/billing/confirmation`,
@@ -170,7 +161,42 @@ export async function createCreditCheckout(
     url:        json.data.attributes.url as string,
     checkoutId: json.data.id as string,
     variantId,
-    credits:    config.credits,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Credit packs (dynamic — fetched from a single LS product's variants)
+// ---------------------------------------------------------------------------
+
+// Variant naming convention: leading integer = credit count (e.g. "100 Credits").
+// Variants are sorted by the `sort` field set in the LS dashboard.
+// Returns [] if LEMONSQUEEZY_CREDITS_PRODUCT_ID is unset or the fetch fails.
+export async function fetchCreditPacks(): Promise<CreditPack[]> {
+  const productId = process.env.LEMONSQUEEZY_CREDITS_PRODUCT_ID
+  if (!productId) return []
+
+  try {
+    const res = await fetch(
+      `${LS_API}/variants?filter[product_id]=${productId}&sort=sort`,
+      { headers: lsHeaders(), next: { revalidate: 3600 } },
+    )
+    if (!res.ok) return []
+
+    const json = await res.json()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const packs: CreditPack[] = (json.data as any[])
+      .filter((v) => v.attributes.status === 'published')
+      .map((v) => ({
+        variantId: String(v.id),
+        credits:   parseInt(v.attributes.name, 10),
+        price:     v.attributes.price as number,
+        name:      v.attributes.name as string,
+      }))
+      .filter((p) => p.credits > 0)
+
+    return packs
+  } catch {
+    return []
   }
 }
 

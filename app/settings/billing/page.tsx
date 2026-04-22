@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
-import { fetchVariantDetails } from '@/app/lib/billing'
+import { fetchVariantDetails, fetchCreditPacks } from '@/app/lib/billing'
 import AppHeader from '@/app/components/AppHeader'
 import BillingCTAs from './BillingCTAs'
 
@@ -110,7 +110,9 @@ export default async function BillingPage() {
     redirect('/settings/billing')
   }
 
-  const [org, subscription, planPrices] = await Promise.all([
+  const creditsEnabled = process.env.ENABLE_CREDITS === 'true'
+
+  const [org, subscription, planPrices, creditPacks] = await Promise.all([
     prisma.organization.findUnique({
       where:  { id: orgId },
       select: { plan: true, managedCreditsBalance: true, lsCustomerId: true, name: true },
@@ -120,6 +122,7 @@ export default async function BillingPage() {
       select: { plan: true, status: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
     }),
     fetchPlanPrices(),
+    creditsEnabled ? fetchCreditPacks() : Promise.resolve(null),
   ])
 
   if (!org) redirect('/')
@@ -183,6 +186,7 @@ export default async function BillingPage() {
             lsCustomerId={org.lsCustomerId ?? null}
             creditsBalance={org.managedCreditsBalance}
             planPrices={planPrices}
+            creditPacks={creditPacks}
           />
         </section>
 
