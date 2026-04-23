@@ -148,7 +148,13 @@ export default async function BillingPage() {
               <h2 className="text-xl font-bold text-gray-900">
                 {PLAN_LABEL[plan] ?? plan}
               </h2>
-              <p className="text-sm text-gray-500 mt-0.5">{PLAN_PRICE[plan] ?? ''}</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {plan === 'starter'
+                  ? `${planPrices.starter.price}${planPrices.starter.period}`
+                  : plan === 'pro'
+                  ? `${planPrices.pro.price}${planPrices.pro.period}`
+                  : PLAN_PRICE[plan] ?? ''}
+              </p>
             </div>
             <div className="shrink-0">
               {subscription ? (
