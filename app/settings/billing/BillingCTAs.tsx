@@ -1,25 +1,32 @@
 'use client'
 
 import { useState } from 'react'
-import type { CreditPack } from '@/app/lib/billing'
+import type { PlanVariant, CreditPack } from '@/app/lib/billing'
 
 // ---------------------------------------------------------------------------
 // Types + constants
 // ---------------------------------------------------------------------------
 
-type SelectablePlan = 'free' | 'starter' | 'pro'
+type KnownPlan = 'free' | 'starter' | 'pro' | 'enterprise'
 
-const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, enterprise: 3 }
-
-const PLAN_HIGHLIGHTS: Record<SelectablePlan, string[]> = {
-  free:    ['50 contacts per run', '1 scoring model', 'No CSV export'],
-  starter: ['Unlimited contacts', '5 scoring models', 'CSV export', 'AI messages'],
-  pro:     ['Everything in Starter', 'Custom AI templates', 'LinkedIn delivery', '3 team seats'],
+const PLAN_HIGHLIGHTS: Record<string, string[]> = {
+  free:       ['50 contacts per run', '1 scoring model', 'No CSV export'],
+  starter:    ['Unlimited contacts', '5 scoring models', 'CSV export', 'AI messages'],
+  pro:        ['Everything in Starter', 'Custom AI templates', 'LinkedIn delivery', '3 team seats'],
+  enterprise: ['Unlimited seats', 'CRM integrations', 'API access', 'SSO + white-label', 'Dedicated support & SLA'],
 }
 
+// Enterprise is always appended as the last option regardless of what LS returns.
+const ENTERPRISE_OPTION = {
+  id:       'enterprise' as const,
+  name:     'Enterprise',
+  price:    null as null,
+  period:   null as null,
+  variantId: null as null,
+}
 
 // ---------------------------------------------------------------------------
-// Error helper — friendly copy for users, raw detail to console
+// Error helper
 // ---------------------------------------------------------------------------
 
 function userMessage(code: string, status: number): string {
@@ -33,43 +40,68 @@ function userMessage(code: string, status: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Props
 // ---------------------------------------------------------------------------
-
-interface PlanPrice {
-  price:  string
-  period: string
-}
 
 interface Props {
   currentPlan:    string
   lsCustomerId:   string | null
   creditsBalance: number
-  planPrices:     { starter: PlanPrice; pro: PlanPrice }
+  planVariants:   PlanVariant[]
   creditPacks:    CreditPack[] | null
+  userEmail:      string | null
 }
 
-export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance, planPrices, creditPacks }: Props) {
-  const normalised: SelectablePlan =
-    currentPlan === 'starter' || currentPlan === 'pro' ? currentPlan : 'free'
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
-  const PLANS = [
-    { id: 'free'    as const, name: 'Free',    price: '$0',                     period: 'forever',                highlights: PLAN_HIGHLIGHTS.free    },
-    { id: 'starter' as const, name: 'Starter', price: planPrices.starter.price, period: planPrices.starter.period, highlights: PLAN_HIGHLIGHTS.starter },
-    { id: 'pro'     as const, name: 'Pro',     price: planPrices.pro.price,     period: planPrices.pro.period,     highlights: PLAN_HIGHLIGHTS.pro     },
+export default function BillingCTAs({
+  currentPlan,
+  lsCustomerId,
+  creditsBalance,
+  planVariants,
+  creditPacks,
+  userEmail,
+}: Props) {
+  // Normalise current plan to a selectable key; unknown plans (enterprise) stay as-is.
+  const normalisedCurrent: KnownPlan =
+    (['free', 'starter', 'pro', 'enterprise'] as KnownPlan[]).includes(currentPlan as KnownPlan)
+      ? (currentPlan as KnownPlan)
+      : 'free'
+
+  // Build display list: LS variants (sorted by price asc) + hardcoded Enterprise.
+  const planOptions = [
+    ...planVariants.map((v) => ({
+      id:        v.plan as KnownPlan,
+      name:      v.name,
+      price:     v.price === 0 ? '$0' : `$${Math.round(v.price / 100)}`,
+      period:    v.price === 0 ? 'forever' : v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : '',
+      variantId: v.variantId,
+    })),
+    ENTERPRISE_OPTION,
   ]
 
-  const [selected, setSelected] = useState<SelectablePlan>(normalised)
-  const [loading, setLoading]   = useState<string | null>(null)
-  const [error, setError]       = useState<string | null>(null)
+  // Rank by position in planOptions (Enterprise is always last).
+  const planRank = Object.fromEntries(planOptions.map((p, i) => [p.id, i]))
 
-  const currentRank  = PLAN_RANK[currentPlan] ?? 0
-  const selectedRank = PLAN_RANK[selected]    ?? 0
+  const [selected, setSelected]       = useState<KnownPlan>(normalisedCurrent)
+  const [loading, setLoading]         = useState<string | null>(null)
+  const [error, setError]             = useState<string | null>(null)
+  // Contact form state (Enterprise)
+  const [contactEmail, setContactEmail] = useState(userEmail ?? '')
+  const [contactMessage, setContactMessage] = useState('')
+  const [inquirySent, setInquirySent] = useState(false)
+
+  const currentRank  = planRank[currentPlan]  ?? 0
+  const selectedRank = planRank[selected]     ?? 0
   const isUpgrade    = selectedRank > currentRank
   const isDowngrade  = selectedRank < currentRank
-  const isSame       = selected === normalised || (currentPlan === 'enterprise' && !isUpgrade)
+  const isSame       = selected === normalisedCurrent
 
   const isPaid = currentPlan === 'starter' || currentPlan === 'pro'
+
+  const selectedOption = planOptions.find((p) => p.id === selected)
 
   function creditBarColor(n: number) {
     if (n > 200) return 'bg-green-500'
@@ -82,13 +114,14 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
   // -------------------------------------------------------------------------
 
   async function doCheckout() {
+    if (!selectedOption?.variantId) return
     setLoading('checkout')
     setError(null)
     try {
       const res  = await fetch('/api/billing/checkout', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ plan: selected }),
+        body:    JSON.stringify({ variantId: selectedOption.variantId }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -149,11 +182,32 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
     }
   }
 
+  async function doEnterpriseInquiry() {
+    setLoading('inquiry')
+    setError(null)
+    try {
+      const res = await fetch('/api/inquiries/enterprise', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: contactEmail.trim(), message: contactMessage.trim() }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(userMessage(data.error, res.status))
+        return
+      }
+      setInquirySent(true)
+    } catch (err) {
+      console.error('[inquiries/enterprise] network error', err)
+      setError('Network error — check your connection and try again.')
+    } finally {
+      setLoading(null)
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
-
-  const upgradePlan = PLANS.find((p) => p.id === selected)
 
   return (
     <div className="space-y-6">
@@ -161,58 +215,104 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
       {/* ── Plan selector ─────────────────────────────────────────────────── */}
       <div>
         <p className="text-xs font-medium text-gray-500 mb-2">Select a plan</p>
-        <div className="space-y-2">
-          {PLANS.map((plan) => {
-            const isCurrent  = plan.id === normalised || (currentPlan === 'enterprise' && plan.id === 'pro')
-            const isSelected = plan.id === selected
+        {planOptions.length === 1 /* only enterprise, LS not configured */ ? (
+          <p className="text-xs text-gray-400 py-2">Plan options are unavailable right now.</p>
+        ) : (
+          <div className="space-y-2">
+            {planOptions.map((option) => {
+              const isCurrent  = option.id === normalisedCurrent
+              const isSelected = option.id === selected
 
-            return (
-              <button
-                key={plan.id}
-                type="button"
-                onClick={() => setSelected(plan.id)}
-                className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border transition-all ${
-                  isSelected
-                    ? 'border-blue-500 bg-blue-50/60 ring-1 ring-blue-400'
-                    : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {/* Radio dot */}
-                <span
-                  className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    isSelected ? 'border-blue-500' : 'border-gray-300'
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setSelected(option.id)}
+                  className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border transition-all ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50/60 ring-1 ring-blue-400'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  {isSelected && (
-                    <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  )}
-                </span>
+                  {/* Radio dot */}
+                  <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                    isSelected ? 'border-blue-500' : 'border-gray-300'
+                  }`}>
+                    {isSelected && <span className="w-2 h-2 rounded-full bg-blue-500" />}
+                  </span>
 
-                {/* Plan info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-sm font-semibold ${isSelected ? 'text-blue-800' : 'text-gray-800'}`}>
-                      {plan.name}
-                    </span>
-                    <span className={`text-sm ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
-                      {plan.price}
-                      <span className="text-xs">{plan.period}</span>
-                    </span>
-                    {isCurrent && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">
-                        Current
+                  {/* Plan info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-sm font-semibold ${isSelected ? 'text-blue-800' : 'text-gray-800'}`}>
+                        {option.name}
                       </span>
-                    )}
+                      {option.price !== null ? (
+                        <span className={`text-sm ${isSelected ? 'text-blue-700' : 'text-gray-500'}`}>
+                          {option.price}<span className="text-xs">{option.period}</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Custom pricing</span>
+                      )}
+                      {isCurrent && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                      {(PLAN_HIGHLIGHTS[option.id] ?? []).join(' · ')}
+                    </p>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
-                    {plan.highlights.join(' · ')}
-                  </p>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
+
+      {/* ── Enterprise contact form ────────────────────────────────────────── */}
+      {selected === 'enterprise' && (
+        <div className="space-y-3 p-4 bg-gray-50 rounded-xl border border-gray-200">
+          {inquirySent ? (
+            <div className="py-2 text-center space-y-1">
+              <p className="text-sm font-semibold text-gray-800">Inquiry sent!</p>
+              <p className="text-xs text-gray-500">We&apos;ll get back to you within one business day.</p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Get in touch</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Tell us about your team and we&apos;ll get back to you within one business day.
+                </p>
+              </div>
+              <input
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="your@email.com"
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <textarea
+                rows={3}
+                value={contactMessage}
+                onChange={(e) => setContactMessage(e.target.value)}
+                placeholder="Tell us about your team size, use case, and any specific requirements…"
+                className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+              <button
+                type="button"
+                disabled={!contactEmail.trim() || !!loading}
+                onClick={doEnterpriseInquiry}
+                className="w-full py-2.5 text-sm font-semibold text-white bg-gray-800 hover:bg-gray-900 disabled:opacity-50 rounded-xl transition-colors"
+              >
+                {loading === 'inquiry' ? 'Sending…' : 'Send inquiry →'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── Error ─────────────────────────────────────────────────────────── */}
       {error && (
@@ -224,31 +324,35 @@ export default function BillingCTAs({ currentPlan, lsCustomerId, creditsBalance,
         </div>
       )}
 
-      {/* ── Confirmation button ────────────────────────────────────────────── */}
-      {isUpgrade && upgradePlan && (
-        <button
-          onClick={doCheckout}
-          disabled={!!loading}
-          className="w-full py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl transition-colors"
-        >
-          {loading === 'checkout'
-            ? 'Redirecting to checkout…'
-            : `Upgrade to ${upgradePlan.name} — ${upgradePlan.price}${upgradePlan.period}`}
-        </button>
-      )}
+      {/* ── Action row ────────────────────────────────────────────────────── */}
+      {selected !== 'enterprise' && (
+        <>
+          {isUpgrade && selectedOption?.variantId && (
+            <button
+              onClick={doCheckout}
+              disabled={!!loading}
+              className="w-full py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl transition-colors"
+            >
+              {loading === 'checkout'
+                ? 'Redirecting to checkout…'
+                : `Upgrade to ${selectedOption.name} — ${selectedOption.price}${selectedOption.period}`}
+            </button>
+          )}
 
-      {isSame && !isUpgrade && !isDowngrade && (
-        <p className="text-xs text-gray-400 text-center py-1">
-          {currentPlan === 'enterprise'
-            ? "You're on the Enterprise plan. Contact us to make changes."
-            : `${PLANS.find((p) => p.id === normalised)?.name ?? 'This'} is your current plan.`}
-        </p>
-      )}
+          {isSame && (
+            <p className="text-xs text-gray-400 text-center py-1">
+              {currentPlan === 'enterprise'
+                ? "You're on the Enterprise plan. Contact us to make changes."
+                : `${selectedOption?.name ?? 'This'} is your current plan.`}
+            </p>
+          )}
 
-      {isDowngrade && (
-        <p className="text-xs text-gray-500 text-center py-1">
-          To downgrade, manage your subscription through the billing portal.
-        </p>
+          {isDowngrade && (
+            <p className="text-xs text-gray-500 text-center py-1">
+              To downgrade, manage your subscription through the billing portal.
+            </p>
+          )}
+        </>
       )}
 
       {/* ── Portal link ───────────────────────────────────────────────────── */}

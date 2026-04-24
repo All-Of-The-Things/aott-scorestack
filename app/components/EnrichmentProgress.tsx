@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 // Types
 // ---------------------------------------------------------------------------
 
-type EnrichStep = 'starting' | 'enriching' | 'complete' | 'error'
+type EnrichStep = 'starting' | 'enriching' | 'complete' | 'cap-notice' | 'error'
 
 interface ContactLog {
   name: string
@@ -75,6 +75,10 @@ export default function EnrichmentProgress({
   const [avgMsPerContact, setAvgMsPerContact] = useState<number>(0)
 
   const [, setRunId] = useState<string | null>(null)
+  const [cappedInfo, setCappedInfo] = useState<{ original: number; capped_to: number } | null>(null)
+  const [completedRunId, setCompletedRunId] = useState<string | null>(null)
+  const [isQuotaError, setIsQuotaError] = useState(false)
+  const [quotaErrorDetails, setQuotaErrorDetails] = useState<{ message: string; balance?: number; needed?: number } | null>(null)
 
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -84,6 +88,7 @@ export default function EnrichmentProgress({
     abortRef.current = abort
 
     async function runEnrichment() {
+      let localCappedInfo: { original: number; capped_to: number } | null = null
       setStep('starting')
 
       let res: Response
@@ -146,6 +151,9 @@ export default function EnrichmentProgress({
 
             if (event.type === 'started') {
               setRunId(event.run_id as string)
+            } else if (event.type === 'capped') {
+              localCappedInfo = { original: event.original as number, capped_to: event.capped_to as number }
+              setCappedInfo(localCappedInfo)
             } else if (event.type === 'progress') {
               const cur = event.current as number
               const tot = event.total as number
@@ -166,14 +174,31 @@ export default function EnrichmentProgress({
                 return next.slice(0, LOG_MAX)
               })
             } else if (event.type === 'complete') {
-              setStep('complete')
-              onComplete(event.run_id as string)
+              const rid = event.run_id as string
+              setRunId(rid)
+              if (localCappedInfo) {
+                setCompletedRunId(rid)
+                setStep('cap-notice')
+              } else {
+                setStep('complete')
+                onComplete(rid)
+              }
               return
             } else if (event.type === 'error') {
-              const msg = (event.message as string) || 'Enrichment failed'
-              setErrorMessage(msg)
-              setStep('error')
-              onError(msg)
+              if (event.code === 'quota_exceeded') {
+                setIsQuotaError(true)
+                setQuotaErrorDetails({
+                  message: (event.message as string) || 'Insufficient credits',
+                  balance: event.balance as number | undefined,
+                  needed:  event.needed  as number | undefined,
+                })
+                setStep('error')
+              } else {
+                const msg = (event.message as string) || 'Enrichment failed'
+                setErrorMessage(msg)
+                setStep('error')
+                onError(msg)
+              }
               return
             }
           }
@@ -201,9 +226,78 @@ export default function EnrichmentProgress({
   const percent = total > 0 ? Math.round((current / total) * 100) : 0
 
   // ---------------------------------------------------------------------------
+  // Cap notice interstitial — shown after enrichment when free plan was applied
+  // ---------------------------------------------------------------------------
+  if (step === 'cap-notice' && cappedInfo && completedRunId) {
+    return (
+      <div className="bg-white rounded-2xl shadow-sm border border-amber-200 p-8 max-w-sm w-full mx-auto text-center">
+        <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+          <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="mt-4 text-sm font-semibold text-gray-800">Free plan limit reached</h2>
+        <p className="mt-1.5 text-xs text-gray-600 bg-amber-50 rounded-lg px-3 py-2">
+          Your CSV had <span className="font-medium">{cappedInfo.original}</span> contacts.
+          Only the first <span className="font-medium">{cappedInfo.capped_to}</span> were enriched on the free plan.
+        </p>
+        <button
+          onClick={() => onComplete(completedRunId)}
+          className="mt-5 w-full py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+        >
+          Continue to scoring →
+        </button>
+        <a
+          href="/settings/billing"
+          className="mt-3 block text-xs text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          Upgrade for unlimited enrichment
+        </a>
+      </div>
+    )
+  }
+
+  // ---------------------------------------------------------------------------
   // Error state
   // ---------------------------------------------------------------------------
   if (step === 'error') {
+    if (isQuotaError && quotaErrorDetails) {
+      return (
+        <div className="bg-white rounded-2xl shadow-sm border border-orange-200 p-8 max-w-sm w-full mx-auto text-center">
+          <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center mx-auto">
+            <svg className="w-5 h-5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+            </svg>
+          </div>
+          <h2 className="mt-4 text-sm font-semibold text-gray-800">Credits needed</h2>
+          <p className="mt-1.5 text-xs text-gray-600 bg-orange-50 rounded-lg px-3 py-2">
+            {quotaErrorDetails.message}
+          </p>
+          {quotaErrorDetails.balance !== undefined && (
+            <p className="mt-2 text-xs text-gray-500">
+              Balance: <span className="font-medium">{quotaErrorDetails.balance}</span> credits
+              {quotaErrorDetails.needed !== undefined && (
+                <> &bull; Needed: <span className="font-medium">{quotaErrorDetails.needed}</span></>
+              )}
+            </p>
+          )}
+          <a
+            href="/settings/billing"
+            className="mt-5 inline-block w-full py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+          >
+            Go to billing →
+          </a>
+          <button
+            onClick={() => onError(quotaErrorDetails.message)}
+            className="mt-3 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            ← Start over
+          </button>
+        </div>
+      )
+    }
+
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-red-200 p-8 max-w-sm w-full mx-auto text-center">
         <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mx-auto">
@@ -228,7 +322,8 @@ export default function EnrichmentProgress({
   // Starting / enriching / complete states
   // ---------------------------------------------------------------------------
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden max-w-lg w-full mx-auto">
+    <div className="flex flex-col gap-3 w-full max-w-lg mx-auto">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden w-full">
 
       {/* Header */}
       <div className="px-6 py-4 border-b border-gray-100">
@@ -353,6 +448,8 @@ export default function EnrichmentProgress({
           </p>
         </div>
       )}
+    </div>
+
     </div>
   )
 }

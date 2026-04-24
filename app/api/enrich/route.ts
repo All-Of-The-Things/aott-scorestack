@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
+import { auth } from '@/app/lib/auth'
+import { getPlanLimitsFor, type PlanLimits } from '@/app/lib/quota'
 import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
 import { sendEnrichmentComplete } from '@/app/lib/notify'
 import { InputJsonObject } from '@prisma/client/runtime/client'
-import { error } from 'console'
 import { get } from '@vercel/blob'
 
 // ---------------------------------------------------------------------------
@@ -73,6 +74,26 @@ export async function POST(request: NextRequest) {
 
   const { blob_url, linkedin_column, original_filename, notify_email } = body
 
+  // Resolve auth context before streaming so quota checks have access
+  const session = await auth()
+  const userId  = session?.user?.id    ?? null
+  const orgId   = session?.user?.orgId ?? null
+  const plan    = (session?.user?.plan ?? 'free') as string
+
+  let managedCreditsBalance = 0
+  let limits: PlanLimits
+
+  if (orgId) {
+    const [org, planLimits] = await Promise.all([
+      prisma.organization.findUnique({ where: { id: orgId }, select: { managedCreditsBalance: true } }),
+      getPlanLimitsFor(plan),
+    ])
+    managedCreditsBalance = org?.managedCreditsBalance ?? 0
+    limits = planLimits
+  } else {
+    limits = await getPlanLimitsFor('free')
+  }
+
   // Set up SSE stream
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -92,12 +113,14 @@ export async function POST(request: NextRequest) {
             enrichedCount: 0,
             failedCount: 0,
             ...(notify_email ? { notifyEmail: notify_email } : {}),
+            ...(userId ? { userId } : {}),
+            ...(orgId  ? { orgId  } : {}),
           },
         })
         runId = run.id
       } catch (err) {
         console.error('Error creating run record:', err)
-        send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : error })
+        send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : String(err) })
         controller.close()
         return
       }
@@ -139,11 +162,39 @@ export async function POST(request: NextRequest) {
         return
       }
 
-      // Update total_contacts count
+      // Record original count before any quota truncation
       await prisma.run.update({
         where: { id: runId },
-        data: { totalContacts: rows.length },
+        data: { totalContacts: rows.length, originalTotalContacts: rows.length },
       })
+
+      // -----------------------------------------------------------------------
+      // Quota enforcement
+      // -----------------------------------------------------------------------
+
+      const isFree = !orgId || plan === 'free'
+
+      if (isFree) {
+        if (limits.runLimit !== -1 && rows.length > limits.runLimit) {
+          const original = rows.length
+          rows = rows.slice(0, limits.runLimit)
+          await prisma.run.update({ where: { id: runId }, data: { totalContacts: rows.length } })
+          send({ type: 'capped', original, capped_to: limits.runLimit })
+        }
+      } else {
+        if (managedCreditsBalance < rows.length) {
+          await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
+          send({
+            type: 'error',
+            code: 'quota_exceeded',
+            message: `You need ${rows.length} credits but your balance is ${managedCreditsBalance}. Top up to continue.`,
+            balance: managedCreditsBalance,
+            needed: rows.length,
+          })
+          controller.close()
+          return
+        }
+      }
 
       let enrichedCount = 0
       let failedCount = 0
@@ -202,6 +253,23 @@ export async function POST(request: NextRequest) {
       const avgEnrichmentMs = rows.length > 0
         ? Math.round(cumulativeMs / rows.length)
         : 0
+
+      // Credit deduction (paid plans only, atomic transaction)
+      if (orgId && plan !== 'free' && enrichedCount > 0) {
+        try {
+          await prisma.$transaction([
+            prisma.organization.update({
+              where: { id: orgId },
+              data: { managedCreditsBalance: { decrement: enrichedCount } },
+            }),
+            prisma.usageLog.create({
+              data: { orgId, runId, contactsConsumed: enrichedCount, enrichmentSource: 'managed_credits' },
+            }),
+          ])
+        } catch (err) {
+          console.error('[enrich] credit deduction failed (non-fatal):', err)
+        }
+      }
 
       // Finalize run
       await prisma.run.update({

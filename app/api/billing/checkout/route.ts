@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
-import { createCheckout } from '@/app/lib/billing'
+import { createCheckout, getPlanFromVariantId } from '@/app/lib/billing'
 
 const Schema = z.object({
-  plan: z.enum(['starter', 'pro']),
+  variantId: z.string().min(1),
 })
 
 export async function POST(req: Request) {
@@ -18,10 +18,12 @@ export async function POST(req: Request) {
   const parsed = Schema.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json({ error: 'invalid_input' }, { status: 400 })
 
-  const { plan } = parsed.data
+  const { variantId } = parsed.data
+  const plan = getPlanFromVariantId(variantId)
+  if (!plan) return NextResponse.json({ error: 'invalid_variant' }, { status: 400 })
 
   try {
-    const checkout = await createCheckout(orgId, plan)
+    const checkout = await createCheckout(orgId, variantId)
 
     await prisma.pendingCheckout.create({
       data: {

@@ -1,32 +1,10 @@
 import { redirect } from 'next/navigation'
 import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
-import { fetchVariantDetails, fetchCreditPacks } from '@/app/lib/billing'
+import { fetchPlanVariants, fetchCreditPacks } from '@/app/lib/billing'
+import type { PlanVariant } from '@/app/lib/billing'
 import AppHeader from '@/app/components/AppHeader'
 import BillingCTAs from './BillingCTAs'
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const PLAN_LABEL: Record<string, string> = {
-  free:       'Free',
-  starter:    'Starter',
-  pro:        'Pro',
-  enterprise: 'Enterprise',
-}
-
-const PLAN_PRICE: Record<string, string> = {
-  free:       '$0 / mo',
-  starter:    '$29 / mo',
-  pro:        '$49 / mo',
-  enterprise: 'Custom pricing',
-}
-
-const FALLBACK_PLAN_PRICES = {
-  starter: { price: '$29', period: '/mo' },
-  pro:     { price: '$49', period: '/mo' },
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -34,6 +12,13 @@ const FALLBACK_PLAN_PRICES = {
 
 function formatDate(d: Date) {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
+function formatVariantPrice(v: PlanVariant): string {
+  if (v.price === 0) return '$0 forever'
+  const dollars = `$${Math.round(v.price / 100)}`
+  const period  = v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : ''
+  return `${dollars}${period}`
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -60,34 +45,6 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-async function fetchPlanPrices() {
-  const starterVariantId = process.env.LEMONSQUEEZY_STARTER_VARIANT_ID
-  const proVariantId     = process.env.LEMONSQUEEZY_PRO_VARIANT_ID
-  if (!starterVariantId || !proVariantId) return FALLBACK_PLAN_PRICES
-
-  const [starter, pro] = await Promise.allSettled([
-    fetchVariantDetails(starterVariantId),
-    fetchVariantDetails(proVariantId),
-  ])
-
-  function fmt(
-    r: PromiseSettledResult<{ price: number; interval: 'month' | 'year' | null }>,
-    fallback: typeof FALLBACK_PLAN_PRICES.starter,
-  ) {
-    if (r.status !== 'fulfilled') return fallback
-    const v = r.value
-    return {
-      price:  `$${Math.round(v.price / 100)}`,
-      period: v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : '',
-    }
-  }
-
-  return {
-    starter: fmt(starter, FALLBACK_PLAN_PRICES.starter),
-    pro:     fmt(pro,     FALLBACK_PLAN_PRICES.pro),
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -98,8 +55,6 @@ export default async function BillingPage() {
 
   const orgId = session.user.orgId
   if (!orgId) {
-    // Org bootstrap may have failed at sign-in — create it now and reload so
-    // the session callback picks up the new orgId on the next request.
     try {
       const org = await prisma.organization.create({ data: { plan: 'free' } })
       await prisma.user.update({
@@ -112,16 +67,16 @@ export default async function BillingPage() {
 
   const creditsEnabled = process.env.ENABLE_CREDITS === 'true'
 
-  const [org, subscription, planPrices, creditPacks] = await Promise.all([
+  const [org, subscription, planVariants, creditPacks] = await Promise.all([
     prisma.organization.findUnique({
       where:  { id: orgId },
-      select: { plan: true, managedCreditsBalance: true, lsCustomerId: true, name: true },
+      select: { plan: true, managedCreditsBalance: true, lsCustomerId: true },
     }),
     prisma.subscription.findUnique({
       where:  { orgId },
       select: { plan: true, status: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
     }),
-    fetchPlanPrices(),
+    fetchPlanVariants(),
     creditsEnabled ? fetchCreditPacks() : Promise.resolve(null),
   ])
 
@@ -129,6 +84,8 @@ export default async function BillingPage() {
 
   const plan   = org.plan as string
   const isFree = plan === 'free'
+
+  const currentVariant = planVariants.find((v) => v.plan === plan)
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -145,15 +102,13 @@ export default async function BillingPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1">Current plan</p>
-              <h2 className="text-xl font-bold text-gray-900">
-                {PLAN_LABEL[plan] ?? plan}
+              <h2 className="text-xl font-bold text-gray-900 capitalize">
+                {plan}
               </h2>
               <p className="text-sm text-gray-500 mt-0.5">
-                {plan === 'starter'
-                  ? `${planPrices.starter.price}${planPrices.starter.period}`
-                  : plan === 'pro'
-                  ? `${planPrices.pro.price}${planPrices.pro.period}`
-                  : PLAN_PRICE[plan] ?? ''}
+                {currentVariant
+                  ? formatVariantPrice(currentVariant)
+                  : plan === 'enterprise' ? 'Custom pricing' : ''}
               </p>
             </div>
             <div className="shrink-0">
@@ -191,8 +146,9 @@ export default async function BillingPage() {
             currentPlan={plan}
             lsCustomerId={org.lsCustomerId ?? null}
             creditsBalance={org.managedCreditsBalance}
-            planPrices={planPrices}
+            planVariants={planVariants}
             creditPacks={creditPacks}
+            userEmail={session.user.email ?? null}
           />
         </section>
 

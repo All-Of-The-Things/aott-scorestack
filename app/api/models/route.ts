@@ -2,15 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
+import { getPlanLimitsFor } from '@/app/lib/quota'
 import type { Criterion } from '@/app/lib/scoring'
-
-// -1 means unlimited
-const PLAN_MODEL_LIMITS: Record<string, number> = {
-  free: 1,
-  starter: 5,
-  pro: -1,
-  enterprise: -1,
-}
 
 // ---------------------------------------------------------------------------
 // Shared validation
@@ -125,7 +118,7 @@ export async function POST(request: NextRequest) {
       plan = org?.plan ?? 'free'
     }
 
-    const limit = PLAN_MODEL_LIMITS[plan] ?? 1
+    const { modelLimit: limit } = await getPlanLimitsFor(plan)
     if (limit !== -1) {
       const count = await prisma.scoringModel.count({ where: { userId } })
       if (count >= limit) {
