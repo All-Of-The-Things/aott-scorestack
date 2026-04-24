@@ -28,17 +28,7 @@ const PLAN_FEATURES = [
   { label: 'Team seats',        free: '1',     starter: '1',         pro: '3'         },
 ]
 
-function userMessage(code: string, status: number): string {
-  if (code === 'unauthorized')             return 'You need to be signed in to change your plan.'
-  if (code === 'account_setup_incomplete') return 'Account setup is still in progress. Please refresh and try again.'
-  if (code === 'checkout_failed')          return "We couldn't start the checkout. Double-check your billing settings."
-  if (status >= 500)                       return 'Something went wrong on our end. Please try again in a moment.'
-  return 'Something went wrong. Please try again.'
-}
-
 export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, currentPlan }: Props) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [planPrices, setPlanPrices] = useState({ starter: '$29/mo', pro: '$49/mo' })
 
   useEffect(() => {
@@ -59,28 +49,8 @@ export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, c
     currentPlan !== undefined &&
     PLAN_RANK[currentPlan] >= PLAN_RANK[requiredPlan]
 
-  const handleUpgrade = useCallback(async (plan: 'starter' | 'pro') => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        console.error('[billing/checkout]', { status: res.status, body: data })
-        setError(userMessage(data.error, res.status))
-        setLoading(false)
-        return
-      }
-      window.location.href = data.checkout_url
-    } catch (err) {
-      console.error('[billing/checkout] network error', err)
-      setError('Network error — check your connection and try again.')
-      setLoading(false)
-    }
+  const handleUpgrade = useCallback(() => {
+    window.location.href = '/settings/billing'
   }, [])
 
   useEffect(() => {
@@ -185,37 +155,25 @@ export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, c
               </table>
             </div>
 
-            {/* Error */}
-            {error && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-lg mb-3">
-                <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
-                </svg>
-                <p className="text-xs text-red-700">{error}</p>
-              </div>
-            )}
-
             {/* CTAs — only the minimum required plan CTA is primary */}
             <div className="flex flex-col gap-2">
               {requiredPlan === 'starter' && (
                 <button
-                  onClick={() => handleUpgrade('starter')}
-                  disabled={loading}
-                  className="w-full py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition-colors"
+                  onClick={handleUpgrade}
+                  className="w-full py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
                 >
-                  {loading ? 'Redirecting…' : `Upgrade to Starter — ${planPrices.starter}`}
+                  {`Upgrade to Starter — ${planPrices.starter}`}
                 </button>
               )}
               <button
-                onClick={() => handleUpgrade('pro')}
-                disabled={loading}
-                className={`w-full py-2.5 text-sm font-medium disabled:opacity-50 rounded-lg transition-colors ${
+                onClick={handleUpgrade}
+                className={`w-full py-2.5 text-sm font-medium rounded-lg transition-colors ${
                   requiredPlan === 'pro'
                     ? 'text-white bg-purple-600 hover:bg-purple-700'
                     : 'text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-100'
                 }`}
               >
-                {loading ? 'Redirecting…' : `Upgrade to Pro — ${planPrices.pro}`}
+                {`Upgrade to Pro — ${planPrices.pro}`}
               </button>
               <button
                 onClick={onClose}

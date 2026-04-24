@@ -1,27 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
-
-const PLAN_MODEL_LIMITS: Record<string, number> = {
-  free: 1,
-  starter: 5,
-  pro: -1,
-  enterprise: -1,
-}
-
-const PLAN_SEAT_LIMITS: Record<string, number> = {
-  free: 1,
-  starter: 1,
-  pro: 3,
-  enterprise: -1,
-}
-
-const PLAN_RUN_LIMITS: Record<string, number> = {
-  free: 50,
-  starter: -1,
-  pro: -1,
-  enterprise: -1,
-}
+import { getPlanLimitsFor } from '@/app/lib/quota'
 
 export async function GET() {
   const session = await auth()
@@ -42,14 +22,15 @@ export async function GET() {
   if (!org) return NextResponse.json({ error: 'org_not_found' }, { status: 404 })
 
   const plan = org.plan as string
+  const limits = await getPlanLimitsFor(plan)
 
   return NextResponse.json({
     plan,
     managedCreditsBalance: org.managedCreditsBalance,
-    contactsPerRunLimit: PLAN_RUN_LIMITS[plan] ?? 50,
+    contactsPerRunLimit: limits.runLimit,
     modelsUsed,
-    modelsLimit: PLAN_MODEL_LIMITS[plan] ?? 1,
+    modelsLimit: limits.modelLimit,
     seats,
-    seatsLimit: PLAN_SEAT_LIMITS[plan] ?? 1,
+    seatsLimit: limits.seatLimit,
   })
 }

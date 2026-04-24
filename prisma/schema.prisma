@@ -76,6 +76,15 @@ enum EnrichmentSource {
   managed_credits
 }
 
+model PlanLimit {
+  plan       Plan @id
+  runLimit   Int  @map("run_limit")
+  modelLimit Int  @map("model_limit")
+  seatLimit  Int  @map("seat_limit")
+
+  @@map("plan_limits")
+}
+
 // ---------------------------------------------------------------------------
 // NextAuth models (required by @auth/prisma-adapter — names must match exactly)
 // ---------------------------------------------------------------------------
@@ -350,8 +359,9 @@ model Run {
   orgId               String?       @map("org_id")
   notifyEmail         String?       @map("notify_email")
   model               ScoringModel? @relation(fields: [modelId], references: [id])
-  originalFilename    String        @map("original_filename")
-  totalContacts       Int           @default(0) @map("total_contacts")
+  originalFilename       String        @map("original_filename")
+  totalContacts          Int           @default(0) @map("total_contacts")
+  originalTotalContacts  Int?          @map("original_total_contacts")
   enrichedCount       Int           @default(0) @map("enriched_count")
   failedCount         Int           @default(0) @map("failed_count")
   status              RunStatus     @default(pending)
