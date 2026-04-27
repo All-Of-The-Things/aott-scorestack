@@ -2,6 +2,12 @@ import Link from 'next/link'
 import { auth } from '@/app/lib/auth'
 import AppHeader from './components/AppHeader'
 
+const BADGE_CLASS: Record<string, string> = {
+  'Starter+': 'text-blue-700 bg-blue-50 border-blue-100',
+  'Pro':      'text-purple-700 bg-purple-50 border-purple-100',
+  'Enterprise': 'text-amber-700 bg-amber-50 border-amber-100',
+}
+
 const HOW_IT_WORKS = [
   {
     step: '1',
@@ -51,6 +57,22 @@ const FEATURES = [
     ),
     badge: 'Starter+',
   },
+  {
+    title: 'BYOK message delivery',
+    desc: 'Send LinkedIn messages directly from your own account using your own credentials — full control, no shared infrastructure.',
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+    ),
+    badge: 'Pro',
+  },
+  {
+    title: 'Custom implementations',
+    desc: 'Dedicated onboarding, custom integrations, and SLA-backed support tailored to your team\'s workflow.',
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />
+    ),
+    badge: 'Enterprise',
+  },
 ]
 
 export default async function MarketingPage() {
@@ -86,26 +108,32 @@ export default async function MarketingPage() {
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link
-              href="/enrich"
-              className="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
-            >
-              Try it free
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-              </svg>
-            </Link>
-            {isAuthenticated && (
+            {isAuthenticated ? (
               <Link
                 href="/runs"
-                className="inline-flex items-center gap-2 px-6 py-3 text-base font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
               >
-                My enrichments →
+                My enrichments
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              </Link>
+            ) : (
+              <Link
+                href="/enrich"
+                className="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
+              >
+                Try it free
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
               </Link>
             )}
           </div>
 
-          <p className="mt-4 text-xs text-gray-400">No credit card required · Free plan available</p>
+          {!isAuthenticated && (
+            <p className="mt-4 text-xs text-gray-400">No credit card required · Free plan available</p>
+          )}
         </section>
 
         {/* How it works */}
@@ -145,7 +173,7 @@ export default async function MarketingPage() {
                   <div className="flex items-center gap-2 mb-1">
                     <p className="text-sm font-semibold text-gray-800">{title}</p>
                     {badge && (
-                      <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full">
+                      <span className={`text-[10px] font-semibold border px-1.5 py-0.5 rounded-full ${BADGE_CLASS[badge] ?? BADGE_CLASS['Starter+']}`}>
                         {badge}
                       </span>
                     )}
@@ -164,13 +192,15 @@ export default async function MarketingPage() {
               Ready to find your best leads?
             </h2>
             <p className="text-blue-200 text-base mb-7 max-w-lg mx-auto">
-              Start with a free account — no credit card required.
+              {isAuthenticated
+                ? 'Pick up where you left off or start a new enrichment.'
+                : 'Start with a free account — no credit card required.'}
             </p>
             <Link
-              href="/enrich"
+              href={isAuthenticated ? '/runs' : '/enrich'}
               className="inline-flex items-center gap-2 px-7 py-3 text-base font-semibold text-blue-600 bg-white hover:bg-blue-50 rounded-xl transition-colors shadow-sm"
             >
-              Start for free
+              {isAuthenticated ? 'Go to my enrichments' : 'Start for free'}
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
               </svg>
