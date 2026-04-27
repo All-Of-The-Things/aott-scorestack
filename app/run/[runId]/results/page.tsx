@@ -173,7 +173,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
         userEmail={session.user.email}
         plan={session.user.plan}
         breadcrumb={[
-          { label: run.originalFilename, href: `/run/${runId}/score` },
+          { label: run.name ?? run.originalFilename, href: `/run/${runId}/score` },
           { label: 'Results' },
         ]}
         modelName={run.model?.name ?? null}
@@ -186,7 +186,13 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
 
           <WorkflowStepper currentStep={3} runId={runId} />
 
-          <h1 className="text-xl font-semibold text-gray-900 mb-4">Scored results</h1>
+          <div className="mb-4">
+            <h1 className="text-xl font-semibold text-gray-900">{run.name ?? run.originalFilename}</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {run.enrichedCount} of {run.totalContacts} contacts enriched
+              {run.model ? ` · Scored with ${run.model.name}` : ''}
+            </p>
+          </div>
 
           <ResultsTabBar runId={runId} activeTab={activeTab} />
 
@@ -271,6 +277,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
               criteria={usedCriteria}
               savedModelName={run.model?.name ?? null}
               knownEmail={run.notifyEmail ?? undefined}
+              plan={plan}
             />
           </div>
 

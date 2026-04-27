@@ -27,6 +27,7 @@ export default async function RunsPage() {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true,
+          name: true,
           originalFilename: true,
           status: true,
           totalContacts: true,
@@ -110,8 +111,8 @@ export default async function RunsPage() {
                       <tr key={run.id} className="hover:bg-gray-50/50 transition-colors">
                         {/* File name */}
                         <td className="pl-6 pr-3 py-3.5 max-w-[220px]">
-                          <p className="font-medium text-gray-800 truncate">{run.originalFilename}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">{formatDate(run.createdAt)}</p>
+                          <p className="font-medium text-gray-800 truncate">{run.name ?? run.originalFilename}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5">{run.originalFilename} · {formatDate(run.createdAt)}</p>
                         </td>
 
                         {/* Status */}

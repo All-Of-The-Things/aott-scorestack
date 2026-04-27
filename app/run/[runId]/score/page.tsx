@@ -52,7 +52,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
-          breadcrumb={[{ label: run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
+          breadcrumb={[{ label: run.name ?? run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
@@ -70,7 +70,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
-          breadcrumb={[{ label: run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
+          breadcrumb={[{ label: run.name ?? run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
@@ -119,7 +119,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         userEmail={session.user.email}
         plan={session.user.plan}
         breadcrumb={[
-          { label: run.originalFilename, href: '/enrich' },
+          { label: run.name ?? run.originalFilename, href: '/enrich' },
           { label: 'Define criteria' },
         ]}
       />
@@ -129,9 +129,13 @@ export default async function ScorePage({ params }: ScorePageProps) {
 
           <WorkflowStepper currentStep={2} runId={runId} />
 
-          <h1 className="text-xl font-semibold text-gray-900 mb-6">
-            Define scoring criteria
-          </h1>
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold text-gray-900">{run.name ?? run.originalFilename}</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Define how to score your {run.enrichedCount} enriched contact{run.enrichedCount !== 1 ? 's' : ''}.
+              Criteria are weighted and applied to every profile.
+            </p>
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start">
 

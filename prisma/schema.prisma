@@ -358,6 +358,7 @@ model ScoringModel {
 
 model Run {
   id                  String        @id @default(uuid())
+  name               String?       @map("name")
   modelId             String?       @map("model_id")
   userId              String?       @map("user_id")
   orgId               String?       @map("org_id")

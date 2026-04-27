@@ -19,6 +19,7 @@ const EnrichBodySchema = z.object({
   linkedin_column: z.string().min(1),
   original_filename: z.string().default('upload.csv'),
   notify_email: z.string().email().optional(),
+  name: z.string().optional(),
 })
 
 // ---------------------------------------------------------------------------
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  const { blob_url, linkedin_column, original_filename, notify_email } = body
+  const { blob_url, linkedin_column, original_filename, notify_email, name } = body
 
   // Resolve auth context before streaming so quota checks have access
   const session = await auth()
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
       try {
         const run = await prisma.run.create({
           data: {
+            name: name ?? null,
             originalFilename: original_filename,
             status: RunStatus.enriching,
             totalContacts: 0,

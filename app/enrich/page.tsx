@@ -18,6 +18,10 @@ export default function EnrichPage() {
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
   const [scoring, setScoring] = useState(false)
+  const [enrichmentName, setEnrichmentName] = useState(() => {
+    const now = new Date()
+    return `Data enrichment - ${now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+  })
 
   const userEmail = status === 'authenticated' ? session.user.email : null
 
@@ -141,6 +145,7 @@ export default function EnrichPage() {
               blobUrl={confirmed.blob_url}
               linkedinColumn={confirmed.linkedin_column}
               originalFilename={confirmed.original_filename}
+              name={enrichmentName}
               notifyEmail={notifyEmail ?? undefined}
               onComplete={handleEnrichComplete}
               onError={handleEnrichError}
@@ -165,6 +170,21 @@ export default function EnrichPage() {
       <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
 
       <div className="max-w-3xl mx-auto px-4 py-12">
+
+        <div className="mb-8">
+          <h1 className="text-lg font-semibold text-gray-900 mb-1">New enrichment</h1>
+          <p className="text-sm text-gray-500 mb-5">Upload a CSV of LinkedIn profiles to enrich and score your contacts.</p>
+          <label className="block text-xs font-medium text-gray-600 mb-1.5" htmlFor="enrichment-name">
+            Enrichment name
+          </label>
+          <input
+            id="enrichment-name"
+            type="text"
+            value={enrichmentName}
+            onChange={(e) => setEnrichmentName(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
+          />
+        </div>
 
         {enrichError && (
           <div className="mb-6">
