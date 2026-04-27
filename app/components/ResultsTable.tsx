@@ -145,16 +145,86 @@ function Chevron({ expanded }: { expanded: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
+// PaginationBar — shared by top and bottom placements
+// ---------------------------------------------------------------------------
+
+interface PaginationBarProps {
+  page: number
+  pageSize: number
+  totalPages: number
+  start: number
+  total: number
+  onPageChange: (p: number) => void
+  onPageSizeChange: (s: number) => void
+}
+
+function PaginationBar({ page, pageSize, totalPages, start, total, onPageChange, onPageSizeChange }: PaginationBarProps) {
+  return (
+    <div className="px-6 py-3 flex items-center justify-between gap-4">
+      <div className="flex items-center gap-2 text-xs text-gray-500">
+        <span>Rows per page</span>
+        {[25, 50, 100].map((size) => (
+          <button
+            key={size}
+            onClick={() => onPageSizeChange(size)}
+            className={`px-2 py-1 rounded-md font-medium transition-colors ${
+              pageSize === size ? 'bg-gray-900 text-white' : 'hover:bg-gray-100'
+            }`}
+          >
+            {size}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 text-xs text-gray-500">
+        <span>{start + 1}–{Math.min(start + pageSize, total)} of {total}</span>
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page === 1}
+          className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="Previous page"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+        </button>
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page === totalPages}
+          className="p-1.5 rounded-md hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="Next page"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // ResultsTable
 // ---------------------------------------------------------------------------
 
 interface ResultsTableProps {
   results: SerializedResult[]
   criteria: CriterionMeta[]
+  defaultPageSize: number
 }
 
-export default function ResultsTable({ results, criteria }: ResultsTableProps) {
+export default function ResultsTable({ results, criteria, defaultPageSize }: ResultsTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [page, setPage]         = useState(1)
+  const [pageSize, setPageSize] = useState(defaultPageSize)
+
+  function handlePageSizeChange(size: number) {
+    setPageSize(size)
+    setPage(1)
+  }
+
+  const totalPages  = Math.max(1, Math.ceil(results.length / pageSize))
+  const start       = (page - 1) * pageSize
+  const pageResults = results.slice(start, start + pageSize)
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -172,6 +242,12 @@ export default function ResultsTable({ results, criteria }: ResultsTableProps) {
 
   // colSpan for detail row: rank + url + status + score + chevron = 5 fixed cols
   const detailColSpan = 5
+
+  const paginationProps = {
+    page, pageSize, totalPages, start, total: results.length,
+    onPageChange: setPage,
+    onPageSizeChange: handlePageSizeChange,
+  }
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -197,6 +273,13 @@ export default function ResultsTable({ results, criteria }: ResultsTableProps) {
         )}
       </div>
 
+      {/* Pagination — top */}
+      {results.length > pageSize && (
+        <div className="border-b border-gray-100">
+          <PaginationBar {...paginationProps} />
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -210,7 +293,7 @@ export default function ResultsTable({ results, criteria }: ResultsTableProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {results.map((result) => (
+            {pageResults.map((result) => (
               <React.Fragment key={result.id}>
                 {/* Main row */}
                 <tr
@@ -259,6 +342,13 @@ export default function ResultsTable({ results, criteria }: ResultsTableProps) {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination — bottom */}
+      {results.length > pageSize && (
+        <div className="border-t border-gray-100">
+          <PaginationBar {...paginationProps} />
+        </div>
+      )}
     </div>
   )
 }

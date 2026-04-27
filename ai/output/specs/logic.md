@@ -146,10 +146,10 @@ INSERT INTO "plan_limits" ("plan", "run_limit", "model_limit", "seat_limit") VAL
 
 `POST /api/enrich` streams SSE — the HTTP response body starts before the row count is known. The quota check therefore happens **inside the SSE stream handler**, after CSV parse and before enrichment begins.
 
-Auth context (`userId`, `orgId`, `plan`) and `managedCreditsBalance` are resolved **before** the `ReadableStream` is created so the closure has access without a second DB round-trip.
+Auth context (`userId`, `orgId`, `plan`) is resolved **before** the `ReadableStream` is created so the closure has access without a second DB round-trip.
 
 ```
-POST /api/enrich  →  resolve auth + credits balance (before stream)
+POST /api/enrich  →  resolve auth context (userId, orgId, plan) before stream
   │
   ├── SSE stream opens immediately
   │
@@ -170,37 +170,23 @@ POST /api/enrich  →  resolve auth + credits balance (before stream)
   │           Emit { type: 'capped', original, capped_to }
   │           Continue enrichment with truncated rows
   │
-  │       PAID PATH — hard fail on insufficient credits:
-  │         If managedCreditsBalance < rows.length:
-  │           Update Run.status = 'failed'
-  │           Emit { type: 'error', code: 'quota_exceeded', message, balance, needed }
-  │           Close stream → return
+  │       PAID PATH (starter / pro / enterprise):
+  │         Monthly subscription covers enrichment — no credit balance check.
+  │         Enrichment proceeds with all rows, no cap.
   │
   ├── 4. Enrich contacts sequentially (SSE progress events)
   │
-  ├── 5. Credit deduction (paid plans only, atomic):
-  │        prisma.$transaction([
-  │          organization.update({ managedCreditsBalance: { decrement: enrichedCount } }),
-  │          usageLog.create({ orgId, runId, contactsConsumed: enrichedCount,
-  │                            enrichmentSource: 'managed_credits' })
-  │        ])
-  │        (non-fatal — enrichment is already done if this fails)
-  │
-  └── 6. On completion:
+  └── 5. On completion:
         a. Update Run.status = 'scoring', enrichedCount, failedCount
         b. Send enrichment notification email if Run.notifyEmail set
         c. Emit { type: 'complete', run_id }
 ```
 
-**Why SSE error instead of HTTP 402**: The stream response has already been initiated (headers sent) when the CSV is fetched. An HTTP-level 402 is only possible if the client passes `contact_count` in the request body as a pre-check. That is not the current contract.
-
 ### Cap feedback in the client
 
-`EnrichmentProgress` handles the two quota SSE events differently:
+`EnrichmentProgress` handles the free-plan cap SSE event:
 
-- **`capped` event** (free plan): sets local var `localCappedInfo` + React state `cappedInfo`. On `complete`, if `localCappedInfo` is set the component switches to step `'cap-notice'` instead of calling `onComplete`. A blocking amber panel shows the original vs. enriched counts with a "Continue to scoring →" CTA. Only then does `onComplete(runId)` fire and navigation proceed.
-
-- **`error` with `code: 'quota_exceeded'`** (paid plan): renders an orange "Credits needed" panel with balance/needed counts and a "Go to billing →" link. `onError` is not called — the panel stays visible.
+- **`capped` event** (free plan): sets module-local var `localCappedInfo` + React state `cappedInfo`. The local var is used (not React state) to avoid stale-closure issues inside the SSE handler. On `complete`, if `localCappedInfo` is set the component switches to step `'cap-notice'` instead of calling `onComplete`. A blocking amber panel shows the original vs. enriched counts with a "Continue to scoring →" CTA. Only then does `onComplete(runId)` fire and navigation proceed.
 
 Both surfaces derive cap state from **persisted DB data**:
 - `EnrichmentProgress`: uses `localCappedInfo` captured from the SSE stream (reflects `Run.originalTotalContacts` set server-side)
@@ -308,21 +294,40 @@ User completes payment on LS-hosted page
 
 ## 3. CSV Export
 
+### Route
+
+`GET /api/runs/:runId/export` — auth required.
+
 ### Logic
 
-1. Auth + session check.
-2. Fetch Run, verify `status === 'complete'`.
-3. Fetch all RunResult rows for the run, ordered by `totalScore DESC`.
-4. Build CSV rows:
-   - Columns: rank, linkedin_url, total_score, [criterion field scores], [enriched fields: name, headline, company, location, etc.]
-5. **Free tier**: return only rows 1–10, append column `note` = "Upgrade to Starter to export all results".
-6. **Starter+**: return all rows, no watermark.
-7. Set `Content-Disposition: attachment; filename="scorestack-{runId}-{date}.csv"`.
-8. Stream response as `text/csv`.
+1. Auth + session check → 401 if no session.
+2. Fetch `Run` row — 404 if not found.
+3. Determine tier: `isFree = (!run.orgId || plan === 'free')`.
+4. Fetch `RunResult` rows:
+   - Filter: `enrichmentStatus: 'success'` AND `linkedinUrl: { contains: 'linkedin' }` (excludes `row_N` fallback URLs stored for failed rows).
+   - Order: `totalScore DESC`.
+   - Limit: `isFree ? 10 : undefined`.
+5. Build CSV via `buildCsvContent(rows)` (`app/lib/export.ts`):
+   - Headers: `['linkedin_url', 'total_score', ...Object.keys(enrichedData)]` — enrichedData keys deduplicated against base headers to prevent duplicate columns (e.g. `LinkedInProfile` includes `linkedin_url`).
+   - Cell escaping: values containing `,`, `"`, or `\n` are double-quoted with `""` escaping.
+6. **Free tier**: top 10 rows, filename `{originalFilename_base}_scores_top10.csv`.
+7. **Paid tier**: all enriched rows, filename `{originalFilename_base}_scores.csv`.
+8. Return `text/csv` response with `Content-Disposition: attachment; filename="..."`.
 
-### Enriched fields included in export
+### `app/lib/export.ts`
 
-`linkedin_url`, `full_name`, `headline`, `current_title`, `company_name`, `location`, `seniority`, `industry`, `company_size`
+Pure helper — no DB calls, no auth.
+
+```ts
+interface ExportRow {
+  linkedinUrl: string
+  totalScore: number | null
+  enrichedData: Record<string, unknown> | null
+}
+buildCsvContent(rows: ExportRow[]): string
+```
+
+Headers are derived from the first row that has `enrichedData`. Falls back to `['linkedin_url', 'total_score']` if no enriched rows are present.
 
 ---
 

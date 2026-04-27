@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 04 — quota check moved inside SSE stream; contacts-per-run limits corrected (paid = unlimited, not 500/2000); T-19 (usage route) already complete; UsageBanner is per-page, not global layout_
+_Last refined: SPEC::REFINE Phase 07 — subscription covers enrichment (no credit gate for paid plans); CSV export built (free=top-10, paid=all); pagination built (RESULTS_PAGE_SIZE env var, 25/50/100); Phase 7 plan: UsageBanner + AI message generation_
 
 ## Overview
 
@@ -100,17 +100,17 @@ A verified session is required from the score page onwards. Scored results conta
 - `SaveModelModal` shows inline upgrade prompt on 409
 
 ### Starter — $29 / month
-- BYOK required OR use managed credit packs (purchased separately)
-- Unlimited contacts per run (bounded by BYOK account limits or purchased credits)
+- Platform-managed enrichment — monthly subscription covers enrichment costs, no credit balance required
+- Unlimited contacts per run
 - 5 active scoring models
 - Full CSV export (scores + enriched fields)
-- AI message generation (basic templates)
+- AI message generation (basic templates, up to 100 messages per run)
 - No delivery automation
 - No team sharing
 - Single user
 
 ### Pro — $49 / month
-- BYOK required OR use managed credit packs (purchased separately)
+- Platform-managed enrichment — monthly subscription covers enrichment costs
 - Unlimited contacts per run
 - Unlimited scoring models
 - Full CSV export
@@ -140,8 +140,8 @@ A verified session is required from the score page onwards. Scored results conta
 | Plan | Monthly revenue | Enrichment cost | Margin |
 |------|----------------|-----------------|--------|
 | Free | $0 | $0 (user's API) | — |
-| Starter | $29 | $0 (BYOK) or cost-covered by credit pack markup | ~$29 |
-| Pro | $49 | $0 (BYOK) or cost-covered by credit pack markup | ~$49 |
+| Starter | $29 | Platform-managed (subscription covers cost) | ~$29 |
+| Pro | $49 | Platform-managed (subscription covers cost) | ~$49 |
 | Managed credit (Standard 500-pack) | $25 | ~$10–15 (LinkedAPI cost) | ~$10–15 per pack |
 
 Pro was reduced from $79 → $49 because the value prop is now the scoring/export/messaging layer, not enrichment (which is BYOK). This makes the price more competitive while restoring full margin.
@@ -155,7 +155,7 @@ Pro was reduced from $79 → $49 because the value prop is now the scoring/expor
 | Enrichment | Platform-managed | Platform-managed | Platform-managed | Platform-managed |
 | Contacts per run | 50 (hard cap) | Unlimited | Unlimited | Unlimited |
 | Active models | 1 | 5 | Unlimited | Unlimited |
-| CSV export | — | Full | Full | Full |
+| CSV export | Top 10 preview | Full | Full | Full |
 | AI suggestions | Basic | Basic | Custom | Custom |
 | AI message gen | — | Basic | Custom | Custom |
 | LinkedIn delivery | — | — | Yes | Yes |
@@ -173,7 +173,7 @@ Pro was reduced from $79 → $49 because the value prop is now the scoring/expor
 
 1. **Free 50-contact cap hit** — "You've reached the free run limit (50 contacts). Upgrade to Starter for unlimited runs."
 2. **Model limit hit** — shown inline in the Save Model modal: "You've reached your 1-model limit on the free plan. Upgrade to Starter to save up to 5 models." with link to `/settings/billing`.
-3. **Export button click (free)** — "Export is available on Starter and above."
+3. **Export full results (free)** — Free users receive a top-10 CSV with a hint: "Free plan: top 10 contacts. Upgrade for all." The button always triggers a download — no modal gate.
 4. **AI message generation click (free)** — "AI messages are available on Starter and above."
 5. **Missing LinkedAPI credentials (delivery)** — "Add your LinkedAPI account in Settings → Integrations to start sending messages." (delivery-only gate — does not affect enrichment)
 6. **Delivery scheduler click (free/starter)** — "Delivery automation is available on Pro and above."

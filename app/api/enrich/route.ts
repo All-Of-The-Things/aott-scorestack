@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
-import { getPlanLimitsFor, type PlanLimits } from '@/app/lib/quota'
+import { getPlanLimitsFor } from '@/app/lib/quota'
 import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
@@ -80,19 +80,7 @@ export async function POST(request: NextRequest) {
   const orgId   = session?.user?.orgId ?? null
   const plan    = (session?.user?.plan ?? 'free') as string
 
-  let managedCreditsBalance = 0
-  let limits: PlanLimits
-
-  if (orgId) {
-    const [org, planLimits] = await Promise.all([
-      prisma.organization.findUnique({ where: { id: orgId }, select: { managedCreditsBalance: true } }),
-      getPlanLimitsFor(plan),
-    ])
-    managedCreditsBalance = org?.managedCreditsBalance ?? 0
-    limits = planLimits
-  } else {
-    limits = await getPlanLimitsFor('free')
-  }
+  const limits = await getPlanLimitsFor(orgId ? plan : 'free')
 
   // Set up SSE stream
   const encoder = new TextEncoder()
@@ -181,20 +169,9 @@ export async function POST(request: NextRequest) {
           await prisma.run.update({ where: { id: runId }, data: { totalContacts: rows.length } })
           send({ type: 'capped', original, capped_to: limits.runLimit })
         }
-      } else {
-        if (managedCreditsBalance < rows.length) {
-          await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
-          send({
-            type: 'error',
-            code: 'quota_exceeded',
-            message: `You need ${rows.length} credits but your balance is ${managedCreditsBalance}. Top up to continue.`,
-            balance: managedCreditsBalance,
-            needed: rows.length,
-          })
-          controller.close()
-          return
-        }
       }
+      // Subscribed plans (starter / pro / enterprise) enrich freely —
+      // the monthly subscription covers enrichment, no credit balance required.
 
       let enrichedCount = 0
       let failedCount = 0
@@ -254,22 +231,6 @@ export async function POST(request: NextRequest) {
         ? Math.round(cumulativeMs / rows.length)
         : 0
 
-      // Credit deduction (paid plans only, atomic transaction)
-      if (orgId && plan !== 'free' && enrichedCount > 0) {
-        try {
-          await prisma.$transaction([
-            prisma.organization.update({
-              where: { id: orgId },
-              data: { managedCreditsBalance: { decrement: enrichedCount } },
-            }),
-            prisma.usageLog.create({
-              data: { orgId, runId, contactsConsumed: enrichedCount, enrichmentSource: 'managed_credits' },
-            }),
-          ])
-        } catch (err) {
-          console.error('[enrich] credit deduction failed (non-fatal):', err)
-        }
-      }
 
       // Finalize run
       await prisma.run.update({

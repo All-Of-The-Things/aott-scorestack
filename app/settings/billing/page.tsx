@@ -53,7 +53,7 @@ export default async function BillingPage() {
   const session = await auth()
   if (!session) redirect('/auth/signin?callbackUrl=/settings/billing')
 
-  const orgId = session.user.orgId
+  let orgId = session.user.orgId
   if (!orgId) {
     try {
       const org = await prisma.organization.create({ data: { plan: 'free' } })
@@ -61,8 +61,11 @@ export default async function BillingPage() {
         where: { id: session.user.id },
         data:  { orgId: org.id, role: 'admin' },
       })
-    } catch { /* ignore — will redirect below */ }
-    redirect('/settings/billing')
+      orgId = org.id
+    } catch (err) {
+      console.error('[billing] org bootstrap failed:', err)
+      redirect('/')
+    }
   }
 
   const creditsEnabled = process.env.ENABLE_CREDITS === 'true'

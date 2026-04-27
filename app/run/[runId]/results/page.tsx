@@ -5,6 +5,7 @@ import { RunStatus } from '@/app/generated/prisma'
 import ResultsTable, { type SerializedResult, type CriterionMeta } from '@/app/components/ResultsTable'
 import type { CriterionScore, Criterion } from '@/app/lib/scoring'
 import SaveModelButton from '@/app/components/SaveModelButton'
+import ExportButton from '@/app/components/ExportButton'
 import ActivationBanner from '@/app/components/ActivationBanner'
 import AppHeader from '@/app/components/AppHeader'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
@@ -144,6 +145,10 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
     criterionScores: (r.criterionScores as unknown as CriterionScore[]) ?? [],
   }))
 
+  const plan   = session.user?.plan ?? 'free'
+  const isFree = !run.orgId || plan === 'free'
+  const defaultPageSize = Math.max(1, parseInt(process.env.RESULTS_PAGE_SIZE ?? '25', 10))
+
   const enrichRate =
     run.totalContacts > 0
       ? Math.round((run.enrichedCount / run.totalContacts) * 100)
@@ -247,8 +252,9 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
             )}
           </div>
 
-          {/* Save model action + results table */}
-          <div className="flex justify-end mb-3">
+          {/* Actions row: save model + export */}
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <ExportButton runId={runId} isFree={isFree} />
             <SaveModelButton
               criteria={usedCriteria}
               savedModelName={run.model?.name ?? null}
@@ -256,7 +262,7 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
             />
           </div>
 
-          <ResultsTable results={serialized} criteria={criteria} />
+          <ResultsTable results={serialized} criteria={criteria} defaultPageSize={defaultPageSize} />
 
         </div>
       </main>

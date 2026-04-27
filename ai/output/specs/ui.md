@@ -93,10 +93,11 @@ The workspace naming concept has been removed. There is no onboarding step.
 **Content by plan:**
 
 - **Free:** `"Free plan · 50 contacts per run"` + "Upgrade →" link. No progress bar — limit is per-run, not cumulative.
-- **Starter / Pro:** `"{managedCreditsBalance} enrichment credits remaining"` + "Buy more →" link → `/settings/billing`. Progress bar: green if > 200, amber if 51–200, red if ≤ 50.
-- **Enterprise:** Hidden — no credit cap.
+- **Starter:** `"Starter plan · Unlimited enrichment"` + "Plan settings →" link → `/settings/billing`. No credit bar — monthly subscription covers enrichment with no per-run cap.
+- **Pro:** `"Pro plan · Unlimited enrichment"` + "Plan settings →" link → `/settings/billing`. No credit bar.
+- **Enterprise:** Hidden.
 
-No `resetDate` or `contactsUsedThisMonth` — the quota model uses a per-run cap (free) or a pre-purchased credit balance (paid), neither of which resets on a schedule.
+No `resetDate` or credit balance bar for paid plans. Enrichment is covered by the monthly subscription and is not metered.
 
 ---
 
@@ -173,13 +174,24 @@ No `resetDate` or `contactsUsedThisMonth` — the quota model uses a per-run cap
 - Link to `/settings/billing`
 - Save button disabled
 
-**New: Export button**
+**New: Pagination (`ResultsTable`)**
 
-Position: Top-right of results section, alongside "Save as model".
+Pagination controls appear at the top (between card header and table) and bottom (after table) when `results.length > pageSize`. Both positions use the shared `PaginationBar` sub-component.
 
-- **Free tier:** Button labelled "Export CSV" with a lock icon. On click: opens `UpgradeModal` for Starter.
-- **Paid tier:** Button labelled "Export CSV". On click: triggers `GET /api/runs/:runId/export` file download.
-  - Optional dropdown: "Top 50", "Top 100", "All" (only if > 100 results).
+- Default page size: read from `RESULTS_PAGE_SIZE` env var (server-side), defaults to `25`. Passed as `defaultPageSize` prop.
+- User-selectable: 25 / 50 / 100 rows per page. Changing page size resets to page 1.
+- Counter: `"{start+1}–{end} of {total}"` displayed between prev/next arrows.
+- Header always shows total contact count regardless of current page.
+
+**New: Export button (`ExportButton`)**
+
+Position: Left side of the actions row above the results card (alongside "Save as model" on the right).
+
+- All tiers see the "Export CSV" button — no lock icon, no `UpgradeModal`.
+- **Free tier:** Downloads top 10 enriched contacts (`_top10` suffix in filename). Hint text below button: `"Free plan: top 10 contacts. Upgrade for all."` with link to `/settings/billing`.
+- **Paid tier:** Downloads all enriched contacts. No hint text.
+- Trigger: `document.createElement('a')` with `href = /api/runs/:runId/export` — browser-native file download, no `fetch` + Blob URL dance.
+- Loading state: button label changes to `"Preparing…"` for 1.5s after click.
 
 **New: Messages tab**
 
@@ -386,8 +398,8 @@ Error pages (app router root):
 | UsageBanner | `app/components/UsageBanner.tsx` | Not started |
 | UpgradeModal | `app/components/UpgradeModal.tsx` | ✅ Built — plan comparison table + checkout CTA |
 | BillingCTAs | `app/settings/billing/BillingCTAs.tsx` | ✅ Built — plan selector, portal link (+ "Soon" state), dynamic credit packs via `creditPacks` prop (feature-flagged) |
-| ExportButton | `app/components/ExportButton.tsx` | Not started |
+| ExportButton | `app/components/ExportButton.tsx` | ✅ Built — free top-10 hint, paid full export, 1.5s loading state |
 | MessagesTab | `app/components/MessagesTab.tsx` | Not started |
 | MessageTemplateModal | `app/components/MessageTemplateModal.tsx` | Not started |
 | DeliverySchedulerModal | `app/components/DeliverySchedulerModal.tsx` | Not started |
-| ResultsTable | `app/components/ResultsTable.tsx` | Needs: export btn + tab bar |
+| ResultsTable | `app/components/ResultsTable.tsx` | ✅ Built — pagination (top + bottom PaginationBar, RESULTS_PAGE_SIZE env var, 25/50/100 options); Needs: tab bar |
