@@ -242,10 +242,11 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-## Phase 7 — AI Message Generation
+## Phase 7 — AI Message Generation ✅
 **Goal:** Paid users can generate personalised LinkedIn messages per contact.
+**Completed:** 2026-04-27
 
-- [ ] **T-30** Create `app/api/messages/templates/route.ts`
+- [x] **T-30** Create `app/api/messages/templates/route.ts`
   - `GET` → list `MessageTemplate` for org
   - `POST { name, tone, goal, systemPrompt }` → create
 
@@ -253,35 +254,38 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - `PUT` → update
   - `DELETE` → delete
 
-- [ ] **T-31** Create `app/lib/messages.ts`
+- [x] **T-31** Create `app/lib/messages.ts` + `app/lib/message-defaults.ts`
   - `generateMessages(runId, templateId, contactIds?)`:
     - Fetch `RunResult` rows + `MessageTemplate`
     - Batch Anthropic calls, 20 concurrent, with prompt caching on system prompt
     - Model: `claude-haiku-4-5-20251001`
-    - System: `template.systemPrompt` (cached)
+    - System: `template.systemPrompt` (cached with `cache_control: { type: 'ephemeral' }`)
     - User: `enrichedData` JSON + matched `criterionScores` JSON
     - Parse `{ body }` from response
-    - Upsert `GeneratedMessage` rows
+    - Upsert `GeneratedMessage` rows (unique constraint on runResultId + templateId)
+  - `DEFAULT_SYSTEM_PROMPT` extracted to `message-defaults.ts` (client-safe)
+  - Added `@@unique([runResultId, templateId])` to `prisma/schema.prisma`
 
-- [ ] **T-32** Create `app/api/messages/generate/route.ts`
-  - `POST { run_id, template_id, top_n?, contact_ids? }` → plan gate (Starter+) → `generateMessages()` → `{ generated, messages }`
+- [x] **T-32** Create `app/api/messages/generate/route.ts`
+  - `POST { run_id, template_id, top_n?, contact_ids? }` → plan gate (Starter+) → `generateMessages()` → `{ generated, failed, messages }`
   - Starter cap: 100 messages/run
 
-- [ ] **T-33** Create `app/components/MessageTemplateModal.tsx`
+- [x] **T-33** Create `app/components/MessageTemplateModal.tsx`
   - Fields: name, tone (dropdown), goal (text), system prompt (Pro+ only)
   - Save → `POST /api/messages/templates`
 
-- [ ] **T-34** Create `app/components/MessagesTab.tsx`
-  - State A: template selector + generate button (locked on Free)
-  - State B: table with preview, View/Edit expander, Regenerate per row
+- [x] **T-34** Create `app/components/MessagesTab.tsx`
+  - State machine: loading → no_templates → select_template → generating → ready | error
+  - Ready state: table with contact URL, score, message preview, Edit/Regenerate/Send(stub) actions
   - Inline edit → `PATCH /api/messages/:id`
-  - "Schedule delivery" → `<DeliverySchedulerModal />`
+  - "Send" button stubbed with Phase 8 tooltip
 
-- [ ] **T-35** Create `app/api/messages/[messageId]/route.ts`
+- [x] **T-35** Create `app/api/messages/[messageId]/route.ts`
   - `PATCH { editedBody }` → update `GeneratedMessage.editedBody`
 
-- [ ] **T-36** Update `app/run/[runId]/results/page.tsx`
-  - Add tab bar: "Scores" | "Messages"
+- [x] **T-36** Update `app/run/[runId]/results/page.tsx`
+  - Add `searchParams` for URL-based tab navigation (`?tab=messages`)
+  - New `app/components/ResultsTabBar.tsx` — "Scores" | "Messages" tab links
   - Render `<MessagesTab runId={runId} plan={plan} />` in Messages tab
 
 ---
