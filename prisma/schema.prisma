@@ -309,6 +309,7 @@ model GeneratedMessage {
   template    MessageTemplate @relation(fields: [templateId], references: [id])
   deliveryJob DeliveryJob?    @relation(fields: [deliveryJobId], references: [id])
 
+  @@unique([runResultId, templateId])
   @@map("generated_messages")
 }
 

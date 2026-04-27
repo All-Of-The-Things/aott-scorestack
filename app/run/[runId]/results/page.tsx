@@ -9,6 +9,8 @@ import ExportButton from '@/app/components/ExportButton'
 import ActivationBanner from '@/app/components/ActivationBanner'
 import AppHeader from '@/app/components/AppHeader'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
+import ResultsTabBar from '@/app/components/ResultsTabBar'
+import MessagesTab from '@/app/components/MessagesTab'
 
 const FIELD_LABELS: Record<string, string> = {
   current_title: 'Current Title',
@@ -51,10 +53,12 @@ const ACTIVATION_WINDOW_MS = 10 * 60 * 1000
 
 interface ResultsPageProps {
   params: { runId: string }
+  searchParams?: { tab?: string }
 }
 
-export default async function ResultsPage({ params }: ResultsPageProps) {
+export default async function ResultsPage({ params, searchParams }: ResultsPageProps) {
   const { runId } = params
+  const activeTab = searchParams?.tab === 'messages' ? 'messages' : 'scores'
 
   const [run, session] = await Promise.all([
     prisma.run.findUnique({
@@ -181,7 +185,14 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
 
           <WorkflowStepper currentStep={3} runId={runId} />
 
-          <h1 className="text-xl font-semibold text-gray-900 mb-6">Scored results</h1>
+          <h1 className="text-xl font-semibold text-gray-900 mb-4">Scored results</h1>
+
+          <ResultsTabBar runId={runId} activeTab={activeTab} />
+
+          {activeTab === 'messages' ? (
+            <MessagesTab runId={runId} plan={plan} />
+          ) : (
+          <>
 
           {/* Context cards: side-by-side */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -263,6 +274,9 @@ export default async function ResultsPage({ params }: ResultsPageProps) {
           </div>
 
           <ResultsTable results={serialized} criteria={criteria} defaultPageSize={defaultPageSize} />
+
+          </>
+          )}
 
         </div>
       </main>
