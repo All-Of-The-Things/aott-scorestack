@@ -76,7 +76,7 @@ export default function BillingCTAs({
       id:        v.plan as KnownPlan,
       name:      v.name,
       price:     v.price === 0 ? '$0' : `$${Math.round(v.price / 100)}`,
-      period:    v.price === 0 ? 'forever' : v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : '',
+      period:    v.price === 0 ? '' : v.interval === 'month' ? '/mo' : v.interval === 'year' ? '/yr' : '',
       variantId: v.variantId,
     })),
     ENTERPRISE_OPTION,
