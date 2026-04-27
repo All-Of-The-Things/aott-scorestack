@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 
 export interface BreadcrumbItem {
@@ -27,9 +28,14 @@ const PLAN_BADGE: Record<string, string> = {
   enterprise: 'text-amber-700 bg-amber-50 border border-amber-100',
 }
 
+const NAV_LINKS = [
+  { href: '/runs', label: 'Enrichments' },
+]
+
 export default function AppHeader({ userEmail, breadcrumb, modelName, plan }: AppHeaderProps) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const pathname = usePathname()
 
   useEffect(() => {
     if (!open) return
@@ -57,6 +63,27 @@ export default function AppHeader({ userEmail, breadcrumb, modelName, plan }: Ap
             </div>
             <span className="text-sm font-semibold text-gray-800">ScoreStack</span>
           </Link>
+
+          {userEmail && (
+            <div className="hidden sm:flex items-center gap-0.5 ml-1 shrink-0">
+              {NAV_LINKS.map((link) => {
+                const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                      isActive
+                        ? 'text-gray-900 bg-gray-100'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                )
+              })}
+            </div>
+          )}
 
           {breadcrumb && breadcrumb.length > 0 && (
             <nav className="flex items-center gap-1 min-w-0" aria-label="Breadcrumb">

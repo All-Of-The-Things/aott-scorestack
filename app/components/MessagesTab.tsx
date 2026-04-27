@@ -36,6 +36,7 @@ export default function MessagesTab({ runId, plan }: Props) {
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | undefined>()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [showProModal, setShowProModal] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -461,10 +462,13 @@ export default function MessagesTab({ runId, plan }: Props) {
                           </button>
                         )}
                         <button
-                          title="LinkedIn delivery — coming in Phase 8"
-                          disabled
-                          className="px-2.5 py-1 text-[11px] text-gray-300 border border-gray-100 rounded-md cursor-not-allowed"
+                          onClick={() => setShowProModal(true)}
+                          title="Send via LinkedIn — Pro feature"
+                          className="px-2.5 py-1 text-[11px] text-gray-400 hover:text-gray-600 border border-gray-200 rounded-md transition-colors inline-flex items-center gap-1"
                         >
+                          <svg className="w-2.5 h-2.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                          </svg>
                           Send
                         </button>
                       </div>
@@ -486,6 +490,13 @@ export default function MessagesTab({ runId, plan }: Props) {
         showUpgradeModal={showUpgradeModal}
         onCloseUpgradeModal={() => setShowUpgradeModal(false)}
         currentPlan={plan}
+      />
+      <UpgradeModal
+        trigger="Send messages directly via LinkedIn"
+        requiredPlan="pro"
+        isOpen={showProModal}
+        onClose={() => setShowProModal(false)}
+        currentPlan={plan as 'free' | 'starter' | 'pro' | 'enterprise'}
       />
     </>
   )

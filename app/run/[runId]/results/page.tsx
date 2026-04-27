@@ -147,6 +147,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
     enrichmentStatus: r.enrichmentStatus as SerializedResult['enrichmentStatus'],
     totalScore: Number(r.totalScore ?? 0),
     criterionScores: (r.criterionScores as unknown as CriterionScore[]) ?? [],
+    enrichedData: (r.enrichedData as Record<string, unknown>) ?? null,
   }))
 
   const plan   = session.user?.plan ?? 'free'
@@ -265,7 +266,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
 
           {/* Actions row: save model + export */}
           <div className="flex items-start justify-between gap-3 mb-3">
-            <ExportButton runId={runId} isFree={isFree} />
+            <ExportButton runId={runId} plan={plan} />
             <SaveModelButton
               criteria={usedCriteria}
               savedModelName={run.model?.name ?? null}
@@ -273,7 +274,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
             />
           </div>
 
-          <ResultsTable results={serialized} criteria={criteria} defaultPageSize={defaultPageSize} />
+          <ResultsTable results={serialized} criteria={criteria} defaultPageSize={defaultPageSize} shouldBlurContent={isFree} />
 
           </>
           )}

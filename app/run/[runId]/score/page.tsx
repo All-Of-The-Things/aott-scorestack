@@ -52,7 +52,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
-          breadcrumb={[{ label: run.originalFilename, href: '/' }, { label: 'Define criteria' }]}
+          breadcrumb={[{ label: run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
@@ -70,7 +70,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
-          breadcrumb={[{ label: run.originalFilename, href: '/' }, { label: 'Define criteria' }]}
+          breadcrumb={[{ label: run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
@@ -84,7 +84,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
                 </div>
                 <h2 className="mt-4 text-sm font-semibold text-gray-800">Enrichment failed</h2>
                 <p className="mt-1.5 text-xs text-gray-500">Something went wrong while processing your contacts.</p>
-                <Link href="/" className="mt-5 inline-block text-xs text-blue-600 hover:underline font-medium">
+                <Link href="/enrich" className="mt-5 inline-block text-xs text-blue-600 hover:underline font-medium">
                   ← Start over
                 </Link>
               </div>
@@ -119,7 +119,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         userEmail={session.user.email}
         plan={session.user.plan}
         breadcrumb={[
-          { label: run.originalFilename, href: '/' },
+          { label: run.originalFilename, href: '/enrich' },
           { label: 'Define criteria' },
         ]}
       />

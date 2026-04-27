@@ -14,6 +14,7 @@ export interface SerializedResult {
   enrichmentStatus: 'success' | 'failed' | 'skipped'
   totalScore: number           // Decimal already converted to number by server page
   criterionScores: CriterionScore[]
+  enrichedData: Record<string, unknown> | null
 }
 
 export interface CriterionMeta {
@@ -33,6 +34,15 @@ const FIELD_LABELS: Record<string, string> = {
   company_size: 'Company Size',
   location: 'Location',
 }
+
+const PROFILE_FIELDS = [
+  'current_title',
+  'seniority',
+  'company_name',
+  'industry',
+  'company_size',
+  'location',
+] as const
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -87,6 +97,26 @@ function MatchedBadge({ matched }: { matched: boolean }) {
     <span className="text-[10px] font-medium text-green-700 bg-green-50 border border-green-100 px-1.5 py-0.5 rounded">✓ Match</span>
   ) : (
     <span className="text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded">✗ No match</span>
+  )
+}
+
+function EnrichedProfile({ data }: { data: Record<string, unknown> | null }) {
+  if (!data) return null
+  const fields = PROFILE_FIELDS.filter((f) => data[f] !== null && data[f] !== undefined)
+  if (fields.length === 0) return null
+
+  return (
+    <div className="mb-4">
+      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">LinkedIn profile</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5">
+        {fields.map((f) => (
+          <div key={f} className="flex flex-col">
+            <span className="text-[10px] text-gray-400">{FIELD_LABELS[f]}</span>
+            <span className="text-xs text-gray-700 font-medium truncate">{String(data[f])}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -210,9 +240,10 @@ interface ResultsTableProps {
   results: SerializedResult[]
   criteria: CriterionMeta[]
   defaultPageSize: number
+  shouldBlurContent: boolean
 }
 
-export default function ResultsTable({ results, criteria, defaultPageSize }: ResultsTableProps) {
+export default function ResultsTable({ results, criteria, defaultPageSize, shouldBlurContent }: ResultsTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [page, setPage]         = useState(1)
   const [pageSize, setPageSize] = useState(defaultPageSize)
@@ -333,7 +364,25 @@ export default function ResultsTable({ results, criteria, defaultPageSize }: Res
                 {expanded.has(result.id) && (
                   <tr className="bg-gray-50">
                     <td colSpan={detailColSpan} className="pl-16 pr-6 py-4">
-                      <CriterionBreakdown scores={result.criterionScores} />
+                      <div className="relative">
+                        <div className={shouldBlurContent ? 'blur-sm select-none pointer-events-none' : ''}>
+                          <EnrichedProfile data={result.enrichedData} />
+                          <CriterionBreakdown scores={result.criterionScores} />
+                        </div>
+                        {shouldBlurContent && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <a
+                              href="/settings/billing"
+                              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg shadow-sm text-xs font-medium text-blue-600 hover:text-blue-700 hover:border-blue-200 transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                              </svg>
+                              Upgrade to unlock enrichment details
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}

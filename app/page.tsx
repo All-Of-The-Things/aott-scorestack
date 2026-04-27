@@ -1,276 +1,184 @@
-'use client'
-
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useSession, signIn } from 'next-auth/react'
-import UploadForm, { type ConfirmedUpload } from '@/app/components/UploadForm'
-import EnrichmentChoice from './components/EnrichmentChoice'
-import EnrichmentProgress from './components/EnrichmentProgress'
-import SavedModels from './components/SavedModels'
+import Link from 'next/link'
+import { auth } from '@/app/lib/auth'
 import AppHeader from './components/AppHeader'
 
-export default function HomePage() {
-  const router = useRouter()
-  const { data: session, status } = useSession()
-  const [stage, setStage] = useState<'upload' | 'choose' | 'enriching' | 'link-sent'>('upload')
-  const [confirmed, setConfirmed] = useState<ConfirmedUpload | null>(null)
-  const [notifyEmail, setNotifyEmail] = useState<string | null>(null)
-  const [enrichError, setEnrichError] = useState<string | null>(null)
-  const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
-  const [scoring, setScoring] = useState(false)
+const HOW_IT_WORKS = [
+  {
+    step: '1',
+    label: 'Upload your CSV',
+    sub: 'Drop in any spreadsheet with LinkedIn profile URLs.',
+  },
+  {
+    step: '2',
+    label: 'Define your criteria',
+    sub: 'Specify titles, seniority levels, industries, and company size.',
+  },
+  {
+    step: '3',
+    label: 'Get ranked results',
+    sub: 'Every contact is enriched, scored, and sorted by fit.',
+  },
+]
 
-  const userEmail = status === 'authenticated' ? session.user.email : null
+const FEATURES = [
+  {
+    title: 'LinkedIn enrichment',
+    desc: 'Current title, company, seniority, industry, and location — pulled automatically.',
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+    ),
+  },
+  {
+    title: 'AI-powered scoring',
+    desc: 'Define what a great fit looks like; Claude grades every contact against your criteria.',
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+    ),
+  },
+  {
+    title: 'CSV export',
+    desc: 'Download your enriched, scored list ready to import into your CRM or sequencer.',
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+    ),
+    badge: 'Starter+',
+  },
+  {
+    title: 'AI message generation',
+    desc: 'Generate personalised LinkedIn outreach for each contact — in one click.',
+    icon: (
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+    ),
+    badge: 'Starter+',
+  },
+]
 
-  const handleEnrichError = (message: string) => {
-    setEnrichError(message)
-    setStage('upload')
-    setConfirmed(null)
-    setNotifyEmail(null)
-    setSelectedModel(null)
-  }
+export default async function MarketingPage() {
+  const session = await auth()
+  const userEmail = session?.user?.email ?? null
+  const plan = session?.user?.plan ?? null
+  const isAuthenticated = !!session
 
-  const handleEnrichComplete = async (runId: string) => {
-    if (selectedModel) {
-      setScoring(true)
-      try {
-        const res = await fetch('/api/score', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ run_id: runId, model_id: selectedModel.id }),
-        })
-
-        if (!res.ok) {
-          const data = await res.json()
-          handleEnrichError(data.error ?? `Scoring failed (${res.status})`)
-          return
-        }
-
-        router.push(`/run/${runId}/results`)
-      } catch {
-        handleEnrichError('Network error — could not score contacts')
-      }
-      return
-    }
-
-    // We already know their email from the notify-me step — send the magic link
-    // so they don't have to re-enter it. The cookie carries the score-page URL
-    // through the confirmed → score flow.
-    if (notifyEmail && status !== 'authenticated') {
-      try {
-        document.cookie = `auth_next=${encodeURIComponent(`/run/${runId}/score`)}; path=/; max-age=600; SameSite=Lax`
-        const result = await signIn('resend', {
-          email:       notifyEmail,
-          redirect:    false,
-          callbackUrl: '/auth/confirmed',
-        })
-        if (!result?.error) {
-          setStage('link-sent')
-          return
-        }
-      } catch { /* fall through to normal redirect on error */ }
-    }
-
-    router.push(`/run/${runId}/score`)
-  }
-
-  const handleModelSelect = (model: { id: string; name: string }) => {
-    setSelectedModel(model)
-  }
-
-  const clearModel = () => {
-    setSelectedModel(null)
-  }
-
-  // -- Magic-link sent (non-logged-in notify-me flow) -------------------------
-  if (stage === 'link-sent' && notifyEmail) {
-    return (
-      <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={null} />
-        <div className="flex items-center justify-center px-4 py-24">
-          <div className="w-full max-w-sm text-center">
-            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <h1 className="text-lg font-semibold text-gray-900 mb-1">Check your inbox</h1>
-            <p className="text-sm text-gray-500">
-              Enrichment complete! We sent a sign-in link to{' '}
-              <span className="font-medium text-gray-700">{notifyEmail}</span>.
-              Click it to score your contacts.
-            </p>
-            <p className="mt-4 text-xs text-gray-400">
-              Didn&apos;t receive it?{' '}
-              <button
-                onClick={() => { setStage('upload'); setNotifyEmail(null); setConfirmed(null) }}
-                className="text-blue-600 hover:underline"
-              >
-                Start over
-              </button>
-            </p>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  // -- Pre-enrichment choice --------------------------------------------------
-  if (stage === 'choose' && confirmed) {
-    return (
-      <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
-        <div className="flex items-center justify-center px-4 py-16">
-          <div className="w-full max-w-lg">
-            <EnrichmentChoice
-              filename={confirmed.original_filename}
-              onStartNow={() => setStage('enriching')}
-              onNotifyMe={(email) => { setNotifyEmail(email); setStage('enriching') }}
-              initialEmail={session?.user?.email ?? undefined}
-            />
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  // -- Enrichment in progress -------------------------------------------------
-  if (stage === 'enriching' && confirmed) {
-    return (
-      <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
-        <div className="flex items-center justify-center px-4 py-16">
-          <div className="w-full max-w-md">
-            <EnrichmentProgress
-              blobUrl={confirmed.blob_url}
-              linkedinColumn={confirmed.linkedin_column}
-              originalFilename={confirmed.original_filename}
-              notifyEmail={notifyEmail ?? undefined}
-              onComplete={handleEnrichComplete}
-              onError={handleEnrichError}
-            />
-            {scoring && (
-              <div className="mt-4 text-center">
-                <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-xs text-gray-500">
-                  Scoring with <span className="font-medium text-gray-700">{selectedModel?.name}</span>...
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  // -- Upload flow ------------------------------------------------------------
   return (
-    <main className="min-h-screen bg-gray-50">
-      <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
+    <>
+      <AppHeader userEmail={userEmail} plan={plan} />
 
-      <div className="max-w-4xl mx-auto px-4 py-16 sm:py-24">
+      <main className="bg-white">
 
         {/* Hero */}
-        <header className="mb-12 text-center">
+        <section className="max-w-5xl mx-auto px-4 pt-20 pb-16 sm:pt-28 sm:pb-20 text-center">
           <div className="inline-flex items-center gap-2 mb-6">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg
-                className="w-4 h-4 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5"
-                />
+            <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
               </svg>
             </div>
-            <span className="text-xl font-bold tracking-tight text-gray-900">ScoreStack</span>
+            <span className="text-2xl font-bold tracking-tight text-gray-900">ScoreStack</span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-gray-900 leading-tight">
-            Rank your contact list{' '}
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-tight max-w-3xl mx-auto">
+            Score your contact list{' '}
             <span className="text-blue-600">with LinkedIn data</span>
           </h1>
-          <p className="mt-4 text-lg text-gray-500 max-w-xl mx-auto leading-relaxed">
-            Upload a CSV, define what a good contact looks like, and get a scored,
-            ranked list in minutes — no manual research required.
+          <p className="mt-5 text-lg sm:text-xl text-gray-500 max-w-2xl mx-auto leading-relaxed">
+            Upload a CSV of LinkedIn profiles, define what a great fit looks like,
+            and get a ranked, enriched list ready to work — in minutes.
           </p>
-        </header>
 
-        {/* Enrichment error banner */}
-        {enrichError && (
-          <div className="max-w-3xl mx-auto mb-6">
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
-              <svg className="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link
+              href="/enrich"
+              className="inline-flex items-center gap-2 px-6 py-3 text-base font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm"
+            >
+              Try it free
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
               </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-red-700">Enrichment failed</p>
-                <p className="text-xs text-red-600 mt-0.5">{enrichError}</p>
-              </div>
-              <button
-                onClick={() => setEnrichError(null)}
-                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
-                aria-label="Dismiss"
+            </Link>
+            {isAuthenticated && (
+              <Link
+                href="/runs"
+                className="inline-flex items-center gap-2 px-6 py-3 text-base font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+                My enrichments →
+              </Link>
+            )}
           </div>
-        )}
 
-        {/* Selected model banner */}
-        {selectedModel && (
-          <div className="max-w-3xl mx-auto mb-6">
-            <div className="flex items-center justify-between gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-              <div className="flex items-center gap-2 min-w-0">
-                <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-xs text-blue-700">
-                  Re-running with <span className="font-medium">{selectedModel.name}</span> — upload a CSV to score it automatically
-                </p>
-              </div>
-              <button
-                onClick={clearModel}
-                className="shrink-0 text-xs text-blue-500 hover:text-blue-700 font-medium transition-colors"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        )}
+          <p className="mt-4 text-xs text-gray-400">No credit card required · Free plan available</p>
+        </section>
 
-        {/* Upload card */}
-        <div className="max-w-3xl mx-auto">
-          <UploadForm onConfirmed={(data) => { setConfirmed(data); setStage('choose') }} />
-
-          {/* How it works — subtle guidance */}
-          <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-            {[
-              { step: '1', label: 'Upload CSV', sub: 'With LinkedIn URLs' },
-              { step: '2', label: 'Define criteria', sub: 'Titles, seniority, industry' },
-              { step: '3', label: 'Get ranked list', sub: 'Scored by fit' },
-            ].map(({ step, label, sub }) => (
-              <div key={step} className="flex flex-col items-center gap-1.5">
-                <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-400 text-xs font-semibold flex items-center justify-center">
-                  {step}
+        {/* How it works */}
+        <section className="bg-gray-50 border-t border-b border-gray-100">
+          <div className="max-w-5xl mx-auto px-4 py-16">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest text-center mb-10">
+              How it works
+            </p>
+            <div className="grid sm:grid-cols-3 gap-8">
+              {HOW_IT_WORKS.map(({ step, label, sub }) => (
+                <div key={step} className="flex flex-col items-center text-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center shrink-0">
+                    {step}
+                  </div>
+                  <p className="text-sm font-semibold text-gray-800">{label}</p>
+                  <p className="text-sm text-gray-500 leading-relaxed">{sub}</p>
                 </div>
-                <p className="text-xs font-medium text-gray-600">{label}</p>
-                <p className="text-xs text-gray-400">{sub}</p>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Features */}
+        <section className="max-w-5xl mx-auto px-4 py-16 sm:py-20">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest text-center mb-10">
+            Everything you need
+          </p>
+          <div className="grid sm:grid-cols-2 gap-6">
+            {FEATURES.map(({ title, desc, icon, badge }) => (
+              <div key={title} className="relative flex gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100">
+                <div className="w-9 h-9 bg-white border border-gray-200 rounded-xl flex items-center justify-center shrink-0 shadow-sm">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                    {icon}
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <p className="text-sm font-semibold text-gray-800">{title}</p>
+                    {badge && (
+                      <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full">
+                        {badge}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 leading-relaxed">{desc}</p>
+                </div>
               </div>
             ))}
           </div>
+        </section>
 
-          {/* Saved models section */}
-          <SavedModels onSelect={handleModelSelect} />
-        </div>
-      </div>
-    </main>
+        {/* Bottom CTA */}
+        <section className="bg-blue-600">
+          <div className="max-w-5xl mx-auto px-4 py-14 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">
+              Ready to find your best leads?
+            </h2>
+            <p className="text-blue-200 text-base mb-7 max-w-lg mx-auto">
+              Start with a free account — no credit card required.
+            </p>
+            <Link
+              href="/enrich"
+              className="inline-flex items-center gap-2 px-7 py-3 text-base font-semibold text-blue-600 bg-white hover:bg-blue-50 rounded-xl transition-colors shadow-sm"
+            >
+              Start for free
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+              </svg>
+            </Link>
+          </div>
+        </section>
+
+      </main>
+    </>
   )
 }

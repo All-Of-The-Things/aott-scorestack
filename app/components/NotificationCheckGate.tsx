@@ -88,7 +88,7 @@ export default function NotificationCheckGate({ runId, email }: NotificationChec
 
       <p className="mt-6 text-xs text-gray-400">
         Wrong email?{' '}
-        <a href="/" className="hover:text-gray-600 transition-colors">
+        <a href="/enrich" className="hover:text-gray-600 transition-colors">
           Start over →
         </a>
       </p>
