@@ -17,8 +17,8 @@ function variantToDisplay(v: { price: number; interval: 'month' | 'year' | null 
 }
 
 export async function GET() {
-  const starterVariantId = process.env.LEMONSQUEEZY_STARTER_VARIANT_ID
-  const proVariantId     = process.env.LEMONSQUEEZY_PRO_VARIANT_ID
+  const starterVariantId = process.env.NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID
+  const proVariantId     = process.env.NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID
 
   if (!starterVariantId || !proVariantId) {
     return NextResponse.json(FALLBACK)

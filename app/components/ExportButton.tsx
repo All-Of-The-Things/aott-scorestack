@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import UpgradeModal from './UpgradeModal'
-
-const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, enterprise: 3 }
+import { isFreePlan } from '@/app/lib/planUtils'
 
 interface ExportButtonProps {
   runId: string
@@ -23,7 +22,7 @@ export default function ExportButton({ runId, plan }: ExportButtonProps) {
       if (res.status === 403) {
         const body = await res.json().catch(() => ({}))
         const required: 'starter' | 'pro' = body.requiredPlan ?? 'starter'
-        if ((PLAN_RANK[plan] ?? 0) >= PLAN_RANK[required]) {
+        if (!isFreePlan(plan)) {
           // User's plan covers this feature — something unexpected went wrong server-side.
           setError('Export failed — please refresh and try again.')
         } else {
@@ -52,7 +51,7 @@ export default function ExportButton({ runId, plan }: ExportButtonProps) {
     }
   }
 
-  const isRestricted = (PLAN_RANK[plan] ?? 0) < PLAN_RANK['starter']
+  const isRestricted = isFreePlan(plan)
 
   return (
     <>

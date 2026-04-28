@@ -10,6 +10,7 @@ import AppHeader from '@/app/components/AppHeader'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
 import ResultsTabBar from '@/app/components/ResultsTabBar'
 import MessagesTab from '@/app/components/MessagesTab'
+import { getPlanLimitsFor } from '@/app/lib/quota'
 
 const FIELD_LABELS: Record<string, string> = {
   current_title: 'Current Title',
@@ -126,19 +127,20 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
   const scoringCriteria = run.scoringCriteria
   const criteria = deriveCriteria(runResults, scoringCriteria)
 
+  const plan        = session.user?.plan ?? 'free'
+  const planLimits  = await getPlanLimitsFor(plan)
+  const isFree      = planLimits.isFree
+  const defaultPageSize = Math.max(1, parseInt(process.env.RESULTS_PAGE_SIZE ?? '25', 10))
+
   const serialized: SerializedResult[] = runResults.map((r, i) => ({
     id: r.id,
     rank: i + 1,
     linkedinUrl: r.linkedinUrl,
     enrichmentStatus: r.enrichmentStatus as SerializedResult['enrichmentStatus'],
     totalScore: Number(r.totalScore ?? 0),
-    criterionScores: (r.criterionScores as unknown as CriterionScore[]) ?? [],
-    enrichedData: (r.enrichedData as Record<string, unknown>) ?? null,
+    criterionScores: isFree ? [] : (r.criterionScores as unknown as CriterionScore[]) ?? [],
+    enrichedData: isFree ? null : (r.enrichedData as Record<string, unknown>) ?? null,
   }))
-
-  const plan   = session.user?.plan ?? 'free'
-  const isFree = !run.orgId || plan === 'free'
-  const defaultPageSize = Math.max(1, parseInt(process.env.RESULTS_PAGE_SIZE ?? '25', 10))
 
   const enrichRate =
     run.totalContacts > 0

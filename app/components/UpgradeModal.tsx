@@ -40,7 +40,6 @@ export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, c
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isOpen) return
     fetch('/api/billing/plans', { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
@@ -56,7 +55,7 @@ export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, c
         })
       })
       .catch(() => {})
-  }, [isOpen])
+  }, [])
 
   const alreadyHasAccess =
     currentPlan !== undefined &&

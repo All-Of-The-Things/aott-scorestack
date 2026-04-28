@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import MessageTemplateModal, { type MessageTemplate } from './MessageTemplateModal'
 import UpgradeModal from './UpgradeModal'
+import { isFreePlan } from '@/app/lib/planUtils'
 
 interface GeneratedMessage {
   id: string
@@ -41,7 +42,7 @@ export default function MessagesTab({ runId, plan }: Props) {
   const [editText, setEditText] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
 
-  const isFree = plan === 'free'
+  const isFree = isFreePlan(plan)
 
   const templates =
     state.kind !== 'loading' && state.kind !== 'no_templates' ? state.templates : []

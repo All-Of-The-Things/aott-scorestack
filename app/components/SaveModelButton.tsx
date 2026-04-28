@@ -6,8 +6,7 @@ import { usePathname } from 'next/navigation'
 import type { Criterion } from '@/app//lib/scoring'
 import SaveModelModal from '@/app/components/SaveModelModal'
 import UpgradeModal from '@/app/components/UpgradeModal'
-
-const PLAN_RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, enterprise: 3 }
+import { isFreePlan } from '@/app/lib/planUtils'
 
 interface SaveModelButtonProps {
   criteria: Criterion[]
@@ -139,7 +138,7 @@ export default function SaveModelButton({ criteria, savedModelName, plan, runId,
   }
 
   // Authenticated — check plan gate
-  const canSave = !plan || (PLAN_RANK[plan] ?? 0) >= PLAN_RANK['starter']
+  const canSave = !plan || !isFreePlan(plan)
 
   if (!canSave) {
     return (
