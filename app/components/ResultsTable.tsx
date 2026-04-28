@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react'
 import type { CriterionScore } from '@/app/lib/scoring'
+import UpgradeModal from '@/app/components/UpgradeModal'
 
 // ---------------------------------------------------------------------------
 // Shared types — exported so the parent Server Component can import them
@@ -160,6 +161,44 @@ function CriterionBreakdown({ scores }: { scores: CriterionScore[] }) {
   )
 }
 
+function LockedDetail({ onUpgrade }: { onUpgrade: () => void }) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="h-2 w-24 bg-gray-200 rounded mb-3" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex flex-col gap-1.5">
+              <div className="h-2 w-14 bg-gray-100 rounded" />
+              <div className="h-3 w-20 bg-gray-200 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-2">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4">
+            <div className="h-3 w-20 bg-gray-200 rounded" />
+            <div className="h-4 w-14 bg-gray-100 rounded-full" />
+            <div className="h-3 w-16 bg-gray-100 rounded" />
+            <div className="h-3 w-12 bg-gray-100 rounded" />
+            <div className="h-3 w-10 bg-gray-100 rounded" />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={onUpgrade}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+        </svg>
+        Unlock enrichment details
+      </button>
+    </div>
+  )
+}
+
 function Chevron({ expanded }: { expanded: boolean }) {
   return (
     <svg
@@ -244,9 +283,10 @@ interface ResultsTableProps {
 }
 
 export default function ResultsTable({ results, criteria, defaultPageSize, shouldBlurContent }: ResultsTableProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [page, setPage]         = useState(1)
-  const [pageSize, setPageSize] = useState(defaultPageSize)
+  const [expanded, setExpanded]     = useState<Set<string>>(new Set())
+  const [page, setPage]             = useState(1)
+  const [pageSize, setPageSize]     = useState(defaultPageSize)
+  const [showUpgrade, setShowUpgrade] = useState(false)
 
   function handlePageSizeChange(size: number) {
     setPageSize(size)
@@ -364,25 +404,14 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
                 {expanded.has(result.id) && (
                   <tr className="bg-gray-50">
                     <td colSpan={detailColSpan} className="pl-16 pr-6 py-4">
-                      <div className="relative">
-                        <div className={shouldBlurContent ? 'blur-sm select-none pointer-events-none' : ''}>
+                      {shouldBlurContent ? (
+                        <LockedDetail onUpgrade={() => setShowUpgrade(true)} />
+                      ) : (
+                        <>
                           <EnrichedProfile data={result.enrichedData} />
                           <CriterionBreakdown scores={result.criterionScores} />
-                        </div>
-                        {shouldBlurContent && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <a
-                              href="/settings/billing"
-                              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-lg shadow-sm text-xs font-medium text-blue-600 hover:text-blue-700 hover:border-blue-200 transition-colors"
-                            >
-                              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                              </svg>
-                              Upgrade to unlock enrichment details
-                            </a>
-                          </div>
-                        )}
-                      </div>
+                        </>
+                      )}
                     </td>
                   </tr>
                 )}
@@ -397,6 +426,16 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
         <div className="border-t border-gray-100">
           <PaginationBar {...paginationProps} />
         </div>
+      )}
+
+      {shouldBlurContent && (
+        <UpgradeModal
+          trigger="Unlock enrichment details and score breakdown"
+          requiredPlan="starter"
+          isOpen={showUpgrade}
+          onClose={() => setShowUpgrade(false)}
+          currentPlan="free"
+        />
       )}
     </div>
   )
