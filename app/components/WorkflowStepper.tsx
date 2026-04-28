@@ -6,7 +6,7 @@ interface WorkflowStepperProps {
 }
 
 const STEPS: { n: number; label: string; href: (runId: string) => string | null }[] = [
-  { n: 1, label: 'Upload & Enrich', href: () => '/' },
+  { n: 1, label: 'Upload & Enrich', href: () => '/enrich' },
   { n: 2, label: 'Define criteria', href: (runId) => `/run/${runId}/score` },
   { n: 3, label: 'View results',    href: () => null },
 ]

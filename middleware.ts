@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 
 // Routes that require an active session. Everything else is public.
 const PROTECTED_PREFIXES = [
+  "/runs",
   "/settings",
   "/delivery",
   "/onboarding",
@@ -22,6 +23,8 @@ const PROTECTED_PREFIXES = [
 // so the saved models panel can render (returns empty list without a session).
 function isProtected(pathname: string, method: string): boolean {
   if (pathname === "/api/models" && method !== "GET") return true;
+  // /api/runs (listing) is protected; /api/runs/[id]/status is public
+  if (pathname === "/api/runs") return true;
   if (pathname.startsWith("/api/runs/") && pathname.endsWith("/export"))
     return true;
   return PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));

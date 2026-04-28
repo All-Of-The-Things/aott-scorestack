@@ -53,8 +53,8 @@ function appUrl() {
 // Primary path: LEMONSQUEEZY_PLANS_PRODUCT_ID is set → fetch all variants for
 // that product and map them by name ("Free", "Starter", "Pro").
 //
-// Fallback path: only the individual LEMONSQUEEZY_STARTER_VARIANT_ID /
-// LEMONSQUEEZY_PRO_VARIANT_ID env vars are set → fetch each variant
+// Fallback path: only the individual NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID /
+// NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID env vars are set → fetch each variant
 // separately and construct the list. Free is added as a $0 entry with no
 // variantId (it has no checkout flow).
 export async function fetchPlanVariants(): Promise<PlanVariant[]> {
@@ -95,8 +95,8 @@ export async function fetchPlanVariants(): Promise<PlanVariant[]> {
 }
 
 async function fetchPlanVariantsFallback(): Promise<PlanVariant[]> {
-  const starterVariantId = process.env.LEMONSQUEEZY_STARTER_VARIANT_ID;
-  const proVariantId     = process.env.LEMONSQUEEZY_PRO_VARIANT_ID;
+  const starterVariantId = process.env.NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID;
+  const proVariantId     = process.env.NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID;
 
   const free: PlanVariant = { variantId: '', plan: 'free', name: 'Free', price: 0, interval: null };
 
@@ -107,11 +107,17 @@ async function fetchPlanVariantsFallback(): Promise<PlanVariant[]> {
 
   const variants: PlanVariant[] = [free];
 
-  if (starterResult.status === 'fulfilled' && starterVariantId) {
-    variants.push({ variantId: starterVariantId, plan: 'starter', name: 'Starter', ...starterResult.value });
+  if (starterVariantId) {
+    const details = starterResult.status === 'fulfilled'
+      ? starterResult.value
+      : { price: 2900, interval: 'month' as const }  // fallback when LS API unavailable
+    variants.push({ variantId: starterVariantId, plan: 'starter', name: 'Starter', ...details });
   }
-  if (proResult.status === 'fulfilled' && proVariantId) {
-    variants.push({ variantId: proVariantId, plan: 'pro', name: 'Pro', ...proResult.value });
+  if (proVariantId) {
+    const details = proResult.status === 'fulfilled'
+      ? proResult.value
+      : { price: 4900, interval: 'month' as const }  // fallback when LS API unavailable
+    variants.push({ variantId: proVariantId, plan: 'pro', name: 'Pro', ...details });
   }
 
   return variants;
@@ -319,7 +325,7 @@ export function getPlanFromVariantId(
   variantId: string | number
 ): 'starter' | 'pro' | null {
   const id = String(variantId);
-  if (id === process.env.LEMONSQUEEZY_STARTER_VARIANT_ID) return 'starter';
-  if (id === process.env.LEMONSQUEEZY_PRO_VARIANT_ID) return 'pro';
+  if (id === process.env.NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID) return 'starter';
+  if (id === process.env.NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID) return 'pro';
   return null;
 }

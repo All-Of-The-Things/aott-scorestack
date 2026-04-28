@@ -5,11 +5,12 @@ import type { Criterion } from '@/app/lib/scoring'
 
 interface SaveModelModalProps {
   criteria: Criterion[]
+  runId?: string
   onClose: () => void
   onSaved: (modelId: string, modelName: string) => void
 }
 
-export default function SaveModelModal({ criteria, onClose, onSaved }: SaveModelModalProps) {
+export default function SaveModelModal({ criteria, runId, onClose, onSaved }: SaveModelModalProps) {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -25,7 +26,7 @@ export default function SaveModelModal({ criteria, onClose, onSaved }: SaveModel
       const res = await fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), criteria }),
+        body: JSON.stringify({ name: name.trim(), criteria, run_id: runId }),
       })
 
       if (!res.ok) {

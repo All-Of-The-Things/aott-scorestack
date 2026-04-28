@@ -87,7 +87,7 @@ export default async function BillingConfirmationPage() {
         )}
 
         <div className="flex flex-col gap-3 w-full">
-          <Link href="/" className="w-full py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors text-center">
+          <Link href="/runs" className="w-full py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors text-center">
             Go to dashboard
           </Link>
           <Link href="/settings/billing" className="w-full py-2.5 text-sm font-medium text-gray-600 hover:text-gray-800 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl transition-colors text-center">

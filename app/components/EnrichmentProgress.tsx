@@ -17,6 +17,7 @@ interface EnrichmentProgressProps {
   blobUrl: string
   linkedinColumn: string
   originalFilename: string
+  name?: string
   /** Email to notify when enrichment completes (from pre-enrichment choice). */
   notifyEmail?: string
   /** Called with the new run_id when enrichment finishes successfully. */
@@ -59,6 +60,7 @@ export default function EnrichmentProgress({
   blobUrl,
   linkedinColumn,
   originalFilename,
+  name,
   notifyEmail,
   onComplete,
   onError,
@@ -101,6 +103,7 @@ export default function EnrichmentProgress({
             linkedin_column: linkedinColumn,
             original_filename: originalFilename,
             ...(notifyEmail ? { notify_email: notifyEmail } : {}),
+            ...(name ? { name } : {}),
           }),
           signal: abort.signal,
         })

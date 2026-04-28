@@ -21,6 +21,7 @@ const CriterionSchema = z.object({
 const CreateModelSchema = z.object({
   name: z.string().min(1).max(100),
   criteria: z.array(CriterionSchema).min(1),
+  run_id: z.string().optional(),
 })
 
 // ---------------------------------------------------------------------------
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 })
   }
 
-  const { name, criteria } = body
+  const { name, criteria, run_id } = body
 
   // Validate weights sum to 100
   const totalWeight = criteria.reduce((sum, c) => sum + c.weight, 0)
@@ -137,6 +138,15 @@ export async function POST(request: NextRequest) {
       ...(userId ? { userId } : {}),
     },
   })
+
+  // Link the model back to the originating run so the results page can
+  // show the saved state on reload without re-querying client-side state.
+  if (run_id && userId) {
+    await prisma.run.updateMany({
+      where: { id: run_id, userId },
+      data: { modelId: model.id },
+    })
+  }
 
   return NextResponse.json({ model_id: model.id }, { status: 201 })
 }

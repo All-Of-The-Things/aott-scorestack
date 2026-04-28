@@ -5,6 +5,7 @@ import { fetchPlanVariants, fetchCreditPacks } from '@/app/lib/billing'
 import type { PlanVariant } from '@/app/lib/billing'
 import AppHeader from '@/app/components/AppHeader'
 import BillingCTAs from './BillingCTAs'
+import { getPlanLimitsFor } from '@/app/lib/quota'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,8 +86,9 @@ export default async function BillingPage() {
 
   if (!org) redirect('/')
 
-  const plan   = org.plan as string
-  const isFree = plan === 'free'
+  const plan        = org.plan as string
+  const planLimits  = await getPlanLimitsFor(plan)
+  const isFree      = planLimits.isFree
 
   const currentVariant = planVariants.find((v) => v.plan === plan)
 

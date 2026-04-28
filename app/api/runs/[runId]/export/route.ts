@@ -2,8 +2,7 @@ import { NextRequest } from 'next/server'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
 import { buildCsvContent } from '@/app/lib/export'
-
-const FREE_EXPORT_LIMIT = 10
+import { getPlanLimitsFor } from '@/app/lib/quota'
 
 export async function GET(
   _req: NextRequest,
@@ -29,9 +28,30 @@ export async function GET(
     })
   }
 
-  const plan   = (session.user?.plan ?? 'free') as string
-  const isFree = !run.orgId || plan === 'free'
-  const limit  = isFree ? FREE_EXPORT_LIMIT : undefined
+  // Read the user's org and plan directly from the DB — session snapshots can
+  // lag if the session-callback DB read fails silently (plan defaults to 'free').
+  const dbUser = await prisma.user.findUnique({
+    where:  { id: session.user.id },
+    select: { orgId: true, org: { select: { plan: true } } },
+  })
+  const userOrgId = dbUser?.orgId ?? null
+
+  if (run.orgId && userOrgId && run.orgId !== userOrgId) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  const plan = (dbUser?.org?.plan ?? 'free') as string
+  const { exportEnabled } = await getPlanLimitsFor(plan)
+
+  if (!exportEnabled) {
+    return new Response(JSON.stringify({ error: 'plan_required', requiredPlan: 'starter' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
 
   const results = await prisma.runResult.findMany({
     where: {
@@ -41,7 +61,6 @@ export async function GET(
     },
     select:  { linkedinUrl: true, totalScore: true, enrichedData: true },
     orderBy: { totalScore: 'desc' },
-    ...(limit !== undefined ? { take: limit } : {}),
   })
 
   const rows = results.map((r) => ({
@@ -52,8 +71,7 @@ export async function GET(
 
   const csv      = buildCsvContent(rows)
   const baseName = run.originalFilename.replace(/\.csv$/i, '')
-  const suffix   = isFree ? `_top${FREE_EXPORT_LIMIT}` : ''
-  const filename = `${baseName}_scores${suffix}.csv`
+  const filename = `${baseName}_scores.csv`
 
   return new Response(csv, {
     headers: {
