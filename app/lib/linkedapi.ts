@@ -28,7 +28,7 @@ export interface FetchProfileResult {
 
 let _client: LinkedApi | null = null
 
-function getClient(): LinkedApi {
+export function getClient(): LinkedApi {
   if (_client) return _client
 
   const linkedApiToken = process.env.LINKED_API_TOKEN
