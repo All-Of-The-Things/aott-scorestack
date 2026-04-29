@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { DEFAULT_SYSTEM_PROMPT } from '@/app/lib/message-defaults'
+import { TONE_EXAMPLE_PROMPTS } from '@/app/lib/message-defaults'
 
 export interface MessageTemplate {
   id: string
@@ -25,12 +25,14 @@ export default function MessageTemplateModal({ isOpen, onClose, onSaved, plan, i
   const [name, setName] = useState('')
   const [tone, setTone] = useState<typeof TONES[number]>('Professional')
   const [goal, setGoal] = useState('')
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT)
+  const [systemPrompt, setSystemPrompt] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showExample, setShowExample] = useState(false)
 
   const canCustomizePrompt = plan === 'pro' || plan === 'enterprise'
   const isEdit = !!initial
+  const examplePrompt = TONE_EXAMPLE_PROMPTS[tone] ?? TONE_EXAMPLE_PROMPTS['Professional']
 
   useEffect(() => {
     if (!isOpen) return
@@ -38,22 +40,25 @@ export default function MessageTemplateModal({ isOpen, onClose, onSaved, plan, i
       setName(initial.name)
       setTone(initial.tone as typeof TONES[number])
       setGoal(initial.goal)
-      setSystemPrompt(initial.systemPrompt)
+      // Strip the JSON suffix if it was stored (backwards compat with old templates)
+      const jsonIdx = initial.systemPrompt.indexOf('\n\nReturn ONLY valid JSON:')
+      setSystemPrompt((jsonIdx !== -1 ? initial.systemPrompt.slice(0, jsonIdx) : initial.systemPrompt).trim())
     } else {
       setName('')
       setTone('Professional')
       setGoal('')
-      setSystemPrompt(DEFAULT_SYSTEM_PROMPT)
+      setSystemPrompt('')
     }
     setError(null)
+    setShowExample(false)
   }, [isOpen, initial])
 
   useEffect(() => {
     if (!isOpen) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (showExample) setShowExample(false); else onClose() } }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, showExample])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -96,7 +101,7 @@ export default function MessageTemplateModal({ isOpen, onClose, onSaved, plan, i
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -131,7 +136,7 @@ export default function MessageTemplateModal({ isOpen, onClose, onSaved, plan, i
             <label className="block text-xs font-medium text-gray-700 mb-1">Tone</label>
             <select
               value={tone}
-              onChange={(e) => setTone(e.target.value as typeof TONES[number])}
+              onChange={(e) => { setTone(e.target.value as typeof TONES[number]); setShowExample(false) }}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
               {TONES.map((t) => (
@@ -154,21 +159,48 @@ export default function MessageTemplateModal({ isOpen, onClose, onSaved, plan, i
             />
           </div>
 
-          {/* Custom system prompt — Pro+ only */}
+          {/* Custom AI instructions — Pro+ only */}
           {canCustomizePrompt && (
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Custom AI prompt
-                <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-100">Pro</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+                  AI instructions
+                  <span className="text-[10px] font-medium text-gray-400">(optional)</span>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700 border border-purple-100">Pro</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowExample((v) => !v)}
+                  className="text-[11px] text-blue-600 hover:text-blue-700 transition-colors"
+                >
+                  {showExample ? 'Hide example' : 'See example →'}
+                </button>
+              </div>
+
+              {/* Tone-appropriate example panel */}
+              {showExample && (
+                <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                  <p className="text-[10px] font-semibold text-blue-700 mb-1.5 uppercase tracking-wide">Example — {tone} tone</p>
+                  <pre className="text-[11px] text-blue-900 whitespace-pre-wrap font-sans leading-relaxed">{examplePrompt}</pre>
+                  <button
+                    type="button"
+                    onClick={() => { setSystemPrompt(examplePrompt); setShowExample(false) }}
+                    className="mt-2.5 text-[11px] font-medium text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    Use this example
+                  </button>
+                </div>
+              )}
+
               <textarea
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
                 rows={5}
-                className="w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder={`Leave empty to use ScoreStack's default ${tone.toLowerCase()} instructions.\n\nOr write your own — describe the message style, what to reference, any constraints.`}
+                className="w-full px-3 py-2 text-xs font-mono border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:font-sans placeholder:text-[11px]"
               />
               <p className="mt-1 text-[11px] text-gray-400">
-                Must end with: Return ONLY valid JSON: {"{ \"body\": \"...\" }"}
+                ScoreStack handles the output format — just describe what the message should do.
               </p>
             </div>
           )}

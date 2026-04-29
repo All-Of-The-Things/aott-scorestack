@@ -263,26 +263,50 @@ Prompt caching: system prompt is cached per template — only the per-contact us
 LinkedAPI uses the same async workflow pattern as profile enrichment (`execute` → poll `result`).
 
 ```
-POST /api/delivery/jobs { runId, scheduledAt? }
+POST /api/delivery/jobs { run_id, contact_ids? }
   └── Auth + Pro gate check
+  └── Fetches GeneratedMessage rows for run (deliveryStatus = 'pending'; optional contact_ids filter)
   └── Creates DeliveryJob row (status: scheduled)
+  └── Links messages to job (deliveryJobId)
+  └── Fire-and-forget processDeliveryJob(jobId, notifyEmail) — returns { job } immediately
 
-Process DeliveryJob (immediate or at scheduledAt):
-  └── For each GeneratedMessage in job:
+processDeliveryJob(jobId, notifyEmail):
+  └── Set DeliveryJob.status = 'running', startedAt
+  └── For each GeneratedMessage (sequential):
         └── client.sendMessage.execute({
-              recipientUrl: runResult.linkedinUrl,
-              message:      generatedMessage.editedBody ?? generatedMessage.body
+              personUrl: runResult.linkedinUrl,   ← SDK param name (not recipientUrl)
+              text:      editedBody ?? body        ← SDK param name (not message)
             })
-        └── workflowId stored; poll client.sendMessage.result(workflowId)
-        └── On success: GeneratedMessage.sentAt = now(), deliveryStatus = 'sent'
-        └── On failure: deliveryStatus = 'failed', increment DeliveryJob.failedCount
-  └── Update DeliveryJob.status = 'complete', completedAt
+        └── Poll client.sendMessage.result(workflowId)
+        └── On success: GeneratedMessage.sentAt = now(), deliveryStatus = 'sent', sentCount++
+        └── On failure: deliveryStatus = 'failed', failedCount++
+        └── Delay DELIVERY_DELAY_MS (default 3000ms)
+  └── Set DeliveryJob.status = 'complete', completedAt
+  └── sendDeliveryComplete(notifyEmail, jobId, sentCount, failedCount) — non-fatal
 ```
+
+### Test mode
+
+When `LINKED_API_TEST_DELIVERY=true`, all messages are redirected to `LINKED_API_TEST_DELIVERY_PROFILE` with body `"test delivery for {actualRecipientUrl}"`. Notifications fire normally.
+
+### Live progress (client)
+
+`GET /api/delivery/jobs/[jobId]/messages` returns per-message status, body, sentAt, and contact URL ordered by `runResult.rowIndex`. The delivery page polls this endpoint every **3 seconds** for running jobs, showing:
+- Pulsing dot on the first `pending` message (currently sending)
+- Green check + sentAt timestamp for sent messages
+- Red × for failed messages
+
+Job-level counts (`sentCount`, `failedCount`, status) are polled every **10 seconds** from `GET /api/delivery/jobs`.
+
+### Scheduling
+
+Only "Send now" is implemented. `scheduledAt` is never written. A "Schedule for later" UI teaser exists in `DeliverySchedulerModal` (coming-soon, non-interactive).
 
 **Notes:**
 - LinkedAPI credentials (`LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`) are reused from enrichment — no additional credentials required from the user
-- LinkedIn has rate limits on messages; delivery is serialised (one at a time per credential set) with a configurable delay between sends (default 3s)
-- `DeliveryJob.channel` field is retained in the schema for future email channel addition but only `linkedin` is implemented in v1
+- Delivery is serialised (one message at a time per credential set) to respect LinkedIn rate limits
+- `DeliveryJob.channel` field is retained in the schema for future email channel addition; only `linkedin` is implemented in v1
+- `OrgIntegration` model exists in schema for future BYOK credential support; unused in v1
 
 ---
 

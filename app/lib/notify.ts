@@ -39,3 +39,34 @@ export async function sendEnrichmentComplete(email: string, runId: string): Prom
     `,
   })
 }
+
+export async function sendDeliveryComplete(
+  email: string,
+  jobId: string,
+  sentCount: number,
+  failedCount: number,
+): Promise<void> {
+  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://scorestack.io'
+  const deliveryUrl = `${baseUrl}/delivery`
+
+  const summary =
+    failedCount === 0
+      ? `All ${sentCount} message${sentCount !== 1 ? 's' : ''} were sent successfully.`
+      : `${sentCount} message${sentCount !== 1 ? 's' : ''} sent, ${failedCount} failed.`
+
+  await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL ?? 'noreply@scorestack.io',
+    to: email,
+    subject: 'Your LinkedIn messages have been sent',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#111;">
+        <h2 style="font-size:18px;font-weight:600;margin:0 0 8px;">Delivery complete</h2>
+        <p style="font-size:14px;color:#555;margin:0 0 24px;">${summary}</p>
+        <a href="${deliveryUrl}"
+          style="display:inline-block;background:#2563eb;color:#fff;font-size:14px;font-weight:500;text-decoration:none;padding:10px 20px;border-radius:8px;">
+          View delivery report →
+        </a>
+      </div>
+    `,
+  })
+}

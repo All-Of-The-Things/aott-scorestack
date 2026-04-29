@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import MessageTemplateModal, { type MessageTemplate } from './MessageTemplateModal'
 import UpgradeModal from './UpgradeModal'
+import DeliverySchedulerModal from './DeliverySchedulerModal'
 import { isFreePlan } from '@/app/lib/planUtils'
 
 interface GeneratedMessage {
@@ -37,10 +39,12 @@ export default function MessagesTab({ runId, plan }: Props) {
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | undefined>()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [showProModal, setShowProModal] = useState(false)
+  const [showSchedulerModal, setShowSchedulerModal] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
+  const router = useRouter()
 
   const isFree = isFreePlan(plan)
 
@@ -55,14 +59,28 @@ export default function MessagesTab({ runId, plan }: Props) {
       const data = await res.json() as { templates: MessageTemplate[] }
       if (data.templates.length === 0) {
         setState({ kind: 'no_templates' })
-      } else {
-        setState({ kind: 'select_template', templates: data.templates })
-        setActiveTemplateId((prev) => prev ?? data.templates[0].id)
+        return
       }
+
+      const firstTemplate = data.templates[0]
+      setActiveTemplateId((prev) => prev ?? firstTemplate.id)
+      const templateId = activeTemplateId ?? firstTemplate.id
+
+      // Try to load existing messages for the active template
+      const msgRes = await fetch(`/api/messages/generate?run_id=${runId}&template_id=${templateId}`)
+      if (msgRes.ok) {
+        const msgData = await msgRes.json() as { messages: GeneratedMessage[] }
+        if (msgData.messages.length > 0) {
+          setState({ kind: 'ready', templates: data.templates, messages: msgData.messages })
+          return
+        }
+      }
+
+      setState({ kind: 'select_template', templates: data.templates })
     } catch {
       setState({ kind: 'error', templates: [], message: 'Failed to load templates. Please refresh.' })
     }
-  }, [])
+  }, [runId, activeTemplateId])
 
   useEffect(() => { loadTemplates() }, [loadTemplates])
 
@@ -89,6 +107,7 @@ export default function MessagesTab({ runId, plan }: Props) {
           ? { kind: 'ready', templates: prev.templates, messages: data.messages }
           : prev
       )
+      setSelectedIds(new Set())
     } catch (err) {
       setState((prev) =>
         prev.kind === 'generating'
@@ -162,6 +181,15 @@ export default function MessagesTab({ runId, plan }: Props) {
     setState((prev) => {
       if (prev.kind === 'loading' || prev.kind === 'no_templates') return prev
       return { ...prev, templates: prev.templates.map((t) => t.id === updated.id ? updated : t) }
+    })
+  }
+
+  function toggleSelect(runResultId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(runResultId)) next.delete(runResultId)
+      else next.add(runResultId)
+      return next
     })
   }
 
@@ -331,9 +359,21 @@ export default function MessagesTab({ runId, plan }: Props) {
 
   // ── Ready — messages table ────────────────────────────────────────────────
   const { messages } = state
+  const allIds = messages.map((m) => m.runResult.id)
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.has(id))
+  const someSelected = selectedIds.size > 0
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(allIds))
+    }
+  }
 
   return (
     <>
+      {/* Toolbar */}
       <div className="flex items-center gap-3 mb-4">
         <div className="flex-1 flex items-center gap-2">
           <select
@@ -367,7 +407,7 @@ export default function MessagesTab({ runId, plan }: Props) {
         {activeTemplate && (
           <button
             onClick={() => handleGenerate(activeTemplate)}
-            className="px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            className="px-3 py-1.5 text-xs font-medium bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg transition-colors"
           >
             Regenerate all
           </button>
@@ -379,18 +419,70 @@ export default function MessagesTab({ runId, plan }: Props) {
         {plan === 'starter' && ' (100-contact limit)'}
       </p>
 
+      {/* Bulk action bar */}
+      {someSelected && (
+        <div className="mb-3 flex items-center gap-3 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl">
+          <span className="text-xs font-medium text-blue-800">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            Clear
+          </button>
+          <button
+            onClick={() => {
+              if (plan !== 'pro' && plan !== 'enterprise') {
+                setShowUpgradeModal(true)
+              } else {
+                setShowSchedulerModal(true)
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
+            Send {selectedIds.size} via LinkedIn
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {messages.length === 0 ? (
           <div className="p-10 text-center text-sm text-gray-400">No messages generated yet.</div>
         ) : (
           <div className="divide-y divide-gray-100">
+            {/* Select-all header */}
+            <div className="px-5 py-2.5 flex items-center gap-3 bg-gray-50 border-b border-gray-100">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-[11px] font-medium text-gray-500">
+                {allSelected ? 'Deselect all' : 'Select all'}
+              </span>
+            </div>
+
             {messages.map((msg, i) => {
               const displayText = msg.editedBody ?? msg.body
               const isExpanded = expandedId === msg.id
+              const isSelected = selectedIds.has(msg.runResult.id)
 
               return (
-                <div key={msg.id} className="px-5 py-4">
+                <div key={msg.id} className={`px-5 py-4 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}>
                   <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(msg.runResult.id)}
+                      className="mt-1 w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0"
+                    />
+
                     <span className="shrink-0 w-6 h-6 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-500 flex items-center justify-center mt-0.5">
                       {i + 1}
                     </span>
@@ -413,6 +505,11 @@ export default function MessagesTab({ runId, plan }: Props) {
                         {msg.editedBody && (
                           <span className="shrink-0 text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full">
                             Edited
+                          </span>
+                        )}
+                        {msg.deliveryStatus === 'sent' && (
+                          <span className="shrink-0 text-[10px] font-medium text-green-700 bg-green-50 border border-green-100 px-1.5 py-0.5 rounded-full">
+                            Sent
                           </span>
                         )}
                       </div>
@@ -463,13 +560,22 @@ export default function MessagesTab({ runId, plan }: Props) {
                           </button>
                         )}
                         <button
-                          onClick={() => setShowProModal(true)}
-                          title="Send via LinkedIn — Pro feature"
-                          className="px-2.5 py-1 text-[11px] text-gray-400 hover:text-gray-600 border border-gray-200 rounded-md transition-colors inline-flex items-center gap-1"
+                          onClick={() => {
+                            if (plan !== 'pro' && plan !== 'enterprise') {
+                              setShowUpgradeModal(true)
+                            } else {
+                              setSelectedIds(new Set([msg.runResult.id]))
+                              setShowSchedulerModal(true)
+                            }
+                          }}
+                          title={plan === 'pro' || plan === 'enterprise' ? 'Send via LinkedIn' : 'Send via LinkedIn — Pro feature'}
+                          className="px-2.5 py-1 text-[11px] text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md transition-colors inline-flex items-center gap-1"
                         >
-                          <svg className="w-2.5 h-2.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                          </svg>
+                          {plan !== 'pro' && plan !== 'enterprise' && (
+                            <svg className="w-2.5 h-2.5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                            </svg>
+                          )}
                           Send
                         </button>
                       </div>
@@ -492,12 +598,16 @@ export default function MessagesTab({ runId, plan }: Props) {
         onCloseUpgradeModal={() => setShowUpgradeModal(false)}
         currentPlan={plan}
       />
-      <UpgradeModal
-        trigger="Send messages directly via LinkedIn"
-        requiredPlan="pro"
-        isOpen={showProModal}
-        onClose={() => setShowProModal(false)}
-        currentPlan={plan as 'free' | 'starter' | 'pro' | 'enterprise'}
+      <DeliverySchedulerModal
+        runId={runId}
+        messageCount={selectedIds.size}
+        contactIds={Array.from(selectedIds)}
+        isOpen={showSchedulerModal}
+        onClose={() => setShowSchedulerModal(false)}
+        onScheduled={() => {
+          setSelectedIds(new Set())
+          router.push('/delivery')
+        }}
       />
     </>
   )

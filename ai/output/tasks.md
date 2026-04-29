@@ -290,37 +290,46 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-## Phase 8 — LinkedIn Delivery
+## Phase 8 — LinkedIn Delivery ✅
 **Goal:** Pro users can send generated messages via LinkedAPI.
+**Completed:** 2026-04-28
 
-- [ ] **T-37** Create `app/lib/delivery.ts`
-  - `processDeliveryJob(jobId)`:
-    - Fetch job + messages, set `status = 'running'`
-    - Per message: `client.sendMessage.execute({ recipientUrl, message })` → poll `result`
-    - On success: `sentAt`, `deliveryStatus = 'sent'`, `sentCount++`
-    - On failure: `deliveryStatus = 'failed'`, `failedCount++`, continue
-    - Delay `DELIVERY_DELAY_MS` (default 3000ms) between sends
-    - On done: `status = 'complete'`, `completedAt`
-  - ⚠️ Confirm `client.sendMessage` method exists in SDK before implementing; fall back to LinkedAPI REST API if not
+- [x] **T-37** Create `app/lib/delivery.ts`
+  - `processDeliveryJob(jobId, notifyEmail)`: sequential send via `client.sendMessage.execute({ personUrl, text })` + poll result
+  - On complete: sends delivery report email via `sendDeliveryComplete` in `app/lib/notify.ts`
+  - `app/lib/linkedapi.ts`: exported `getClient()` for reuse
+  - SDK params confirmed: `{ personUrl, text }` (not `recipientUrl`/`message` as originally noted)
 
-- [ ] **T-38** Create `app/api/delivery/jobs/route.ts`
-  - `GET` → plan gate (Pro+) → list jobs for org (filter `runId`, `status`)
-  - `POST { run_id, scheduled_at?, contact_ids? }` → plan gate → create job, link messages → process immediately if `scheduledAt` null
+- [x] **T-38** Create `app/api/delivery/jobs/route.ts`
+  - `GET` → Pro gate → list jobs for org (optional `?runId=` filter)
+  - `POST { run_id, contact_ids? }` → Pro gate → create job → fire-and-forget `processDeliveryJob` → return job immediately
 
   Create `app/api/delivery/jobs/[jobId]/route.ts`
-  - `GET` → job with counts
-  - `DELETE` → cancel if `status === 'scheduled'`
+  - `GET` → job with counts (org-scoped)
+  - `DELETE` → cancel if `status === 'scheduled'`; unlinks messages back to pending
 
-- [ ] **T-39** Create `app/components/DeliverySchedulerModal.tsx`
-  - Contact count display
-  - Send now vs datetime picker
+- [x] **T-39** Create `app/components/DeliverySchedulerModal.tsx`
+  - "Send now" CTA + grayed-out "Schedule for later — Coming soon" teaser
   - No credential input (LinkedAPI keys from server env)
-  - Submit → `POST /api/delivery/jobs` → confirmation + link to `/delivery`
+  - Submit → `POST /api/delivery/jobs` → `router.push('/delivery')`
+  - Updated `app/components/MessagesTab.tsx`: removed stub Pro UpgradeModal; Send button opens DeliverySchedulerModal for Pro users, UpgradeModal for others
 
-- [ ] **T-40** Create `app/delivery/page.tsx`
-  - Table: run name, channel, status badge, sent/failed, timestamps, actions
-  - Cancel button → confirm → `DELETE /api/delivery/jobs/:id`
-  - Poll running jobs every 10s
+- [x] **T-40** Create `app/delivery/page.tsx` + `app/components/DeliveryJobsTable.tsx`
+  - Card layout per job: run name, status badge, sent/failed counts, start/completion timestamps
+  - Running jobs auto-expand showing per-message live list (contact handle, status dot, message preview, sentAt timestamp)
+  - `GET /api/delivery/jobs/[jobId]/messages` polls every **3s** for running jobs; job-level list polls every **10s**
+  - First `pending` message in queue shown with pulsing dot as "currently sending"
+  - Completed/cancelled jobs show collapsible message history
+  - Cancel action for `scheduled` jobs
+  - Nav link added to `AppHeader` (Pro/Enterprise only)
+  - `LINKED_API_TEST_DELIVERY` / `LINKED_API_TEST_DELIVERY_PROFILE` env vars for test mode
+
+**Post-ship refinements (not in original spec):**
+- Messages not retrieved on page return → added `GET /api/messages/generate?run_id&template_id` + load on mount in `MessagesTab`
+- Bulk message selection → checkboxes + selection bar → `contact_ids` forwarded to scheduler
+- `ON CONFLICT` bug (missing DB unique constraint) → replaced all `upsert` calls with `findFirst + update/create`
+- JSON output suffix stripped from user-facing prompt field; appended automatically in `messages.ts`
+- Breadcrumb + nav coexistence → nav hidden when breadcrumb is present
 
 ---
 
