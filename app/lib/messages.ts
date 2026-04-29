@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/app/lib/prisma'
 import { EnrichmentStatus } from '@/app/generated/prisma'
-import { DEFAULT_SYSTEM_PROMPT } from '@/app/lib/message-defaults'
+import { DEFAULT_SYSTEM_PROMPT, JSON_OUTPUT_SUFFIX } from '@/app/lib/message-defaults'
 
 export { DEFAULT_SYSTEM_PROMPT }
 
@@ -28,11 +28,21 @@ export async function generateMessages(
     console.warn('Anthropic API calls are disabled by ANTHROPIC_ENABLED=false — returning mock messages')
     let generated = 0
     for (const result of results) {
-      await prisma.generatedMessage.upsert({
-        where: { runResultId_templateId: { runResultId: result.id, templateId } },
-        update: { body: `[Mock] Hi! I noticed your background at ${String((result.enrichedData as Record<string, unknown>)?.company_name ?? 'your company')} and think we should connect.`, editedBody: null, generatedAt: new Date() },
-        create: { runResultId: result.id, templateId, body: `[Mock] Hi! I noticed your background at ${String((result.enrichedData as Record<string, unknown>)?.company_name ?? 'your company')} and think we should connect.` },
+      const mockBody = `[Mock] Hi! I noticed your background at ${String((result.enrichedData as Record<string, unknown>)?.company_name ?? 'your company')} and think we should connect.`
+      const existing = await prisma.generatedMessage.findFirst({
+        where: { runResultId: result.id, templateId },
+        select: { id: true },
       })
+      if (existing) {
+        await prisma.generatedMessage.update({
+          where: { id: existing.id },
+          data: { body: mockBody, editedBody: null, generatedAt: new Date() },
+        })
+      } else {
+        await prisma.generatedMessage.create({
+          data: { runResultId: result.id, templateId, body: mockBody },
+        })
+      }
       generated++
     }
     return { generated, failed: 0 }
@@ -42,7 +52,8 @@ export async function generateMessages(
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set')
 
   const client = new Anthropic({ apiKey })
-  const systemPrompt = template.systemPrompt || DEFAULT_SYSTEM_PROMPT
+  // Always append the JSON output constraint — users never write this themselves.
+  const systemPrompt = (template.systemPrompt || DEFAULT_SYSTEM_PROMPT) + JSON_OUTPUT_SUFFIX
 
   let generated = 0
   let failed = 0
@@ -77,11 +88,20 @@ export async function generateMessages(
       const parsed = JSON.parse(cleaned) as { body: string }
       if (typeof parsed.body !== 'string') throw new Error('Response missing body field')
 
-      await prisma.generatedMessage.upsert({
-        where: { runResultId_templateId: { runResultId: result.id, templateId } },
-        update: { body: parsed.body, editedBody: null, generatedAt: new Date() },
-        create: { runResultId: result.id, templateId, body: parsed.body },
+      const existing = await prisma.generatedMessage.findFirst({
+        where: { runResultId: result.id, templateId },
+        select: { id: true },
       })
+      if (existing) {
+        await prisma.generatedMessage.update({
+          where: { id: existing.id },
+          data: { body: parsed.body, editedBody: null, generatedAt: new Date() },
+        })
+      } else {
+        await prisma.generatedMessage.create({
+          data: { runResultId: result.id, templateId, body: parsed.body },
+        })
+      }
       generated++
     } catch (err) {
       console.error(`generateMessages: failed for runResult ${result.id}:`, err)
