@@ -9,10 +9,9 @@
 | Database | PostgreSQL via Prisma ORM |
 | File storage | Vercel Blob |
 | AI / LLM | Anthropic SDK (Claude) |
-| LinkedIn enrichment | @linkedapi/node SDK (platform credentials from env vars — no user setup required) |
+| LinkedIn enrichment + delivery | ConnectSafely REST API (platform API key from env var; BYOK for delivery) |
 | Email | Resend (magic-link auth + enrichment notifications only) |
 | Payments | Lemon Squeezy (subscriptions + one-time credit packs; MoR, Uruguay-safe) |
-| LinkedIn delivery | @linkedapi/node SDK (BYOK — user's own LinkedAPI credentials stored encrypted per org) |
 | Deployment | Vercel |
 
 ---
@@ -52,7 +51,7 @@
        │
 ┌──────▼──────────────────────────────────┐
 │  External services (called from API)   │
-│  @linkedapi/node  — enrichment + messaging      │
+│  ConnectSafely REST API — enrichment + messaging│
 │  Resend           — auth + notifications email  │
 │  Lemon Squeezy    — billing (MoR, Uruguay-safe) │
 └─────────────────────────────────────────┘
@@ -258,9 +257,9 @@ Prompt caching: system prompt is cached per template — only the per-contact us
 
 ## Delivery Architecture
 
-### LinkedIn messaging (LinkedAPI)
+### LinkedIn messaging (ConnectSafely)
 
-LinkedAPI uses the same async workflow pattern as profile enrichment (`execute` → poll `result`).
+ConnectSafely is a REST API accessed via plain `fetch` with `Authorization: Bearer CONNECT_SAFELY_API_KEY`. There is no SDK.
 
 ```
 POST /api/delivery/jobs { run_id, contact_ids? }
@@ -273,11 +272,10 @@ POST /api/delivery/jobs { run_id, contact_ids? }
 processDeliveryJob(jobId, notifyEmail):
   └── Set DeliveryJob.status = 'running', startedAt
   └── For each GeneratedMessage (sequential):
-        └── client.sendMessage.execute({
-              personUrl: runResult.linkedinUrl,   ← SDK param name (not recipientUrl)
-              text:      editedBody ?? body        ← SDK param name (not message)
+        └── connectsafely.sendMessage({
+              personUrl: runResult.linkedinUrl,
+              text:      editedBody ?? body
             })
-        └── Poll client.sendMessage.result(workflowId)
         └── On success: GeneratedMessage.sentAt = now(), deliveryStatus = 'sent', sentCount++
         └── On failure: deliveryStatus = 'failed', failedCount++
         └── Delay DELIVERY_DELAY_MS (default 3000ms)
@@ -285,9 +283,18 @@ processDeliveryJob(jobId, notifyEmail):
   └── sendDeliveryComplete(notifyEmail, jobId, sentCount, failedCount) — non-fatal
 ```
 
+### Migration co-existence (Phase 9 transition)
+
+During the staged migration, both LinkedAPI and ConnectSafely can be active simultaneously via feature flags:
+
+- `CONNECT_SAFELY_DELIVERY_ENABLED=true` → delivery uses ConnectSafely; else LinkedAPI (legacy fallback)
+- `CONNECT_SAFELY_ENRICHMENT_ENABLED=true` → enrichment uses ConnectSafely; else LinkedAPI (legacy fallback)
+
+Once both flags are stable in production, LinkedAPI is removed entirely (Stage 9c).
+
 ### Test mode
 
-When `LINKED_API_TEST_DELIVERY=true`, all messages are redirected to `LINKED_API_TEST_DELIVERY_PROFILE` with body `"test delivery for {actualRecipientUrl}"`. Notifications fire normally.
+When `LINKED_API_TEST_DELIVERY=true`, all messages are redirected to `LINKED_API_TEST_DELIVERY_PROFILE` with body `"test delivery for {actualRecipientUrl}"`. This flag works with both ConnectSafely and the LinkedAPI fallback. Notifications fire normally.
 
 ### Live progress (client)
 
@@ -303,8 +310,8 @@ Job-level counts (`sentCount`, `failedCount`, status) are polled every **10 seco
 Only "Send now" is implemented. `scheduledAt` is never written. A "Schedule for later" UI teaser exists in `DeliverySchedulerModal` (coming-soon, non-interactive).
 
 **Notes:**
-- LinkedAPI credentials (`LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`) are reused from enrichment — no additional credentials required from the user
-- Delivery is serialised (one message at a time per credential set) to respect LinkedIn rate limits
+- `CONNECT_SAFELY_API_KEY` is the single credential for both enrichment and delivery (platform-managed)
+- Delivery is serialised (one message at a time) to respect LinkedIn rate limits
 - `DeliveryJob.channel` field is retained in the schema for future email channel addition; only `linkedin` is implemented in v1
 - `OrgIntegration` model exists in schema for future BYOK credential support; unused in v1
 
@@ -377,6 +384,8 @@ LEMONSQUEEZY_STORE_ID=
 LEMONSQUEEZY_STARTER_VARIANT_ID=
 LEMONSQUEEZY_PRO_VARIANT_ID=
 
-# LinkedAPI keys already in env (reused for delivery — no new vars needed)
-# LINKED_API_TOKEN and LINKED_API_ID_TOKEN cover both enrichment + messaging
+CONNECT_SAFELY_API_KEY=             # ConnectSafely REST API key (enrichment + messaging)
+# Migration flags (Phase 9 transition — remove once both are stable in production)
+CONNECT_SAFELY_DELIVERY_ENABLED=    # true = use ConnectSafely for delivery (false = LinkedAPI fallback)
+CONNECT_SAFELY_ENRICHMENT_ENABLED=  # true = use ConnectSafely for enrichment (false = LinkedAPI fallback)
 ```

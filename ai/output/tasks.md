@@ -3,8 +3,8 @@
 **Phase:** EXECUTION  
 **Command:** BUILD::IMPLEMENT  
 **Source specs:** `/ai/output/specs/`
-**Last replanned:** PLAN::ARCHITECTURE Phase 04 — seat limits deferred to Phase 9 (T-44b); T-47 moved from Phase 10 → Phase 4; Phase 5 audited (T-21/T-22/T-24 already complete)  
-**Total tasks:** 49 across 10 phases
+**Last replanned:** PLAN::ARCHITECTURE Phase 09 — ConnectSafely migration inserted as new Phase 9 (Teams → Phase 10, Gates → Phase 11); T-44b seat limits remain in Phase 10  
+**Total tasks:** 57 across 11 phases
 
 Phases must be executed in order. Each phase's output is a hard dependency for the next.
 
@@ -333,7 +333,85 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-## Phase 9 — Team Management
+## Phase 9 — ConnectSafely Migration
+**Goal:** Replace LinkedAPI with ConnectSafely for delivery and enrichment, one feature at a time, keeping both providers co-existing via feature flags so the app remains fully functional throughout. Teams support deferred to Phase 10.
+
+**Motivation:** The same LinkedAPI account is shared across other workflows; ConnectSafely achieves the same at a lower price point and uses a plain REST API (no SDK).
+
+---
+
+### Stage 9a — Delivery (ConnectSafely for message sending)
+
+- [ ] **T-CS1** Install / configure ConnectSafely
+  - Add `CONNECT_SAFELY_API_KEY` to `.env` and `.env.example`
+  - Add `CONNECT_SAFELY_DELIVERY_ENABLED` env var (defaults to `false`)
+  - No npm package — all calls are plain `fetch`
+
+- [ ] **T-CS2** Create `app/lib/connectsafely.ts`
+  - HTTP client singleton reading `CONNECT_SAFELY_API_KEY`; throws on missing key (mirroring `getClient()` in `linkedapi.ts`)
+  - `sendMessage(personUrl: string, text: string): Promise<{ success: boolean; error?: string }>`
+    - POST to ConnectSafely's message-send endpoint with `Authorization: Bearer CONNECT_SAFELY_API_KEY`
+    - Map response to `{ success, error }` — no SDK types exposed outside this file
+  - Confirm exact endpoint + request shape against ConnectSafely API docs before implementing
+
+- [ ] **T-CS3** Update `app/lib/delivery.ts`
+  - Import `sendMessage as csSendMessage` from `./connectsafely`
+  - At top of `processDeliveryJob`: `const useConnectSafely = process.env.CONNECT_SAFELY_DELIVERY_ENABLED === 'true'`
+  - In the per-message send loop, branch:
+    - `useConnectSafely === true` → `await csSendMessage({ personUrl, text })` → map `{ success }` to sent/failed
+    - `useConnectSafely === false` → existing `client.sendMessage.execute / result` path (unchanged)
+  - Test mode (`LINKED_API_TEST_DELIVERY` / `LINKED_API_TEST_DELIVERY_PROFILE`) applies to both branches — personUrl + text are built before the branch
+
+  **Verification (9a):** `CONNECT_SAFELY_DELIVERY_ENABLED=true`, `LINKED_API_TEST_DELIVERY=true` → create delivery job → confirm messages reach `sent` with `sentAt` timestamps
+
+---
+
+### Stage 9b — Enrichment (ConnectSafely for profile fetching)
+
+- [ ] **T-CS4** Add `CONNECT_SAFELY_ENRICHMENT_ENABLED` env var to `.env` and `.env.example` (defaults to `false`)
+
+- [ ] **T-CS5** Extend `app/lib/connectsafely.ts`
+  - Add `fetchProfile(linkedinUrl: string): Promise<FetchProfileResult>`
+    - Imports `FetchProfileResult` and `LinkedInProfile` from `./linkedapi` (interfaces stay there until Stage 9c)
+    - GET / POST to ConnectSafely's enrichment endpoint
+    - Map response to `LinkedInProfile` shape (same fields: `full_name`, `headline`, `current_title`, `company_name`, `location`, etc.)
+    - Returns `{ status: 'failed', profile: null, error }` on any HTTP error
+  - Confirm exact endpoint + response shape against ConnectSafely API docs before implementing
+
+- [ ] **T-CS6** Update `app/lib/linkedapi.ts` → `fetchProfile`
+  - Add at the very top of `fetchProfile` (after the mock check):
+    ```ts
+    if (process.env.CONNECT_SAFELY_ENRICHMENT_ENABLED === 'true') {
+      return fetchProfileCS(linkedinUrl) // imported from ./connectsafely
+    }
+    ```
+  - All existing LinkedAPI logic remains untouched below that guard
+  - `LINKED_API_ENABLED` mock shortcut continues to work for both paths
+
+  **Verification (9b):** `CONNECT_SAFELY_ENRICHMENT_ENABLED=true` → upload CSV → enriched profiles return valid `full_name`, `headline`, `company_name`
+
+---
+
+### Stage 9c — Cleanup (remove LinkedAPI entirely)
+_Execute only after both flags are stable in production_
+
+- [ ] **T-CS7** Remove `@linkedapi/node`
+  - `npm uninstall @linkedapi/node`
+  - Move `LinkedInProfile` and `FetchProfileResult` interfaces from `app/lib/linkedapi.ts` → `app/lib/connectsafely.ts`
+  - Update all imports: `app/api/enrich/route.ts`, `app/mocks/enrich.ts`, `app/lib/delivery.ts`
+  - Delete `app/lib/linkedapi.ts`
+
+- [ ] **T-CS8** Remove LinkedAPI env vars and migration flags
+  - Remove from `.env` / `.env.example`: `LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`, `LINKED_API_ENABLED`, `LINKED_API_TEST_DELIVERY`, `LINKED_API_TEST_DELIVERY_PROFILE`, `CONNECT_SAFELY_DELIVERY_ENABLED`, `CONNECT_SAFELY_ENRICHMENT_ENABLED`
+  - Update `app/lib/delivery.ts`: remove feature-flag branch, keep only ConnectSafely path
+  - Update delivery Architecture section in `architecture.md` to remove migration co-existence note
+  - Confirm app boots and a full run (upload → enrich → score → generate → deliver) completes with no LinkedAPI references
+
+  **Verification (9c):** `@linkedapi/node` absent from `node_modules`; app boots without `LINKED_API_*` vars; end-to-end run succeeds
+
+---
+
+## Phase 10 — Team Management
 **Goal:** Pro orgs can invite teammates; all data scoped to org.
 
 - [ ] **T-41** Create `app/api/org/members/route.ts`
@@ -364,9 +442,9 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-## Phase 10 — Gates, Limits, Polish
+## Phase 11 — Gates, Limits, Polish
 **Goal:** All limits enforced; all queries org-scoped.
-**Note:** T-47 moved to Phase 4 (completes the quota story there). Phase 9 adds `PLAN_SEAT_LIMITS` to `quota.ts` and seat enforcement to invite route.
+**Note:** T-47 moved to Phase 4 (completes the quota story there). Phase 10 adds `PLAN_SEAT_LIMITS` to `quota.ts` and seat enforcement to invite route.
 
 - [ ] **T-45** Update `app/api/models/route.ts`
   - Import `PLAN_MODEL_LIMITS` from `quota.ts`
@@ -424,10 +502,11 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 | `app/api/delivery/jobs/[jobId]/route.ts` | 8 |
 | `app/components/DeliverySchedulerModal.tsx` | 8 |
 | `app/delivery/page.tsx` | 8 |
-| `app/api/org/members/route.ts` | 9 |
-| `app/api/org/members/[userId]/route.ts` | 9 |
-| `app/api/org/invite/route.ts` | 9 |
-| `app/settings/team/page.tsx` | 9 |
+| `app/lib/connectsafely.ts` | 9 |
+| `app/api/org/members/route.ts` | 10 |
+| `app/api/org/members/[userId]/route.ts` | 10 |
+| `app/api/org/invite/route.ts` | 10 |
+| `app/settings/team/page.tsx` | 10 |
 
 ## Modified files summary
 
@@ -439,11 +518,13 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 | `app/components/EnrichmentProgress.tsx` | 5 | Two-path UX |
 | `app/run/[runId]/score/page.tsx` | 5 | Polling fallback |
 | `app/run/[runId]/results/page.tsx` | 6, 7 | Export button + Messages tab |
-| `app/api/models/route.ts` | 9, 10 | orgId scope + limit check |
-| `app/api/score/route.ts` | 10 | orgId scope |
-| `app/api/suggest/route.ts` | 10 | orgId scope |
-| `app/components/SaveModelButton.tsx` | 10 | Model limit gate |
-| `app/lib/auth.ts` | 9 | Invite acceptance callback |
+| `app/lib/delivery.ts` | 9 | ConnectSafely delivery feature flag |
+| `app/lib/linkedapi.ts` | 9 | ConnectSafely enrichment feature flag guard |
+| `app/api/models/route.ts` | 10, 11 | orgId scope + limit check |
+| `app/api/score/route.ts` | 11 | orgId scope |
+| `app/api/suggest/route.ts` | 11 | orgId scope |
+| `app/components/SaveModelButton.tsx` | 11 | Model limit gate |
+| `app/lib/auth.ts` | 10 | Invite acceptance callback |
 
 ## New environment variables
 
@@ -469,4 +550,9 @@ LEMONSQUEEZY_CREDITS_5000_PRODUCT_ID=
 DELIVERY_DELAY_MS=3000
 
 ENCRYPTION_KEY=                        # 32-byte hex string — used for AES-256 BYOK credential encryption (Phase 8)
+
+# Phase 9 — ConnectSafely migration
+CONNECT_SAFELY_API_KEY=                # ConnectSafely REST API key
+CONNECT_SAFELY_DELIVERY_ENABLED=       # true = route delivery through ConnectSafely (false = LinkedAPI fallback)
+CONNECT_SAFELY_ENRICHMENT_ENABLED=     # true = route enrichment through ConnectSafely (false = LinkedAPI fallback)
 ```

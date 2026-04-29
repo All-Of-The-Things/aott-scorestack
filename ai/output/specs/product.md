@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 07 — subscription covers enrichment (no credit gate for paid plans); CSV export built (free=top-10, paid=all); pagination built (RESULTS_PAGE_SIZE env var, 25/50/100); Phase 7 plan: UsageBanner + AI message generation_
+_Last refined: SPEC::REFINE Phase 09 — ConnectSafely replaces LinkedAPI for enrichment + delivery (feature-flagged, staged migration); Teams support deferred to Phase 10_
 
 ## Overview
 
@@ -31,16 +31,16 @@ Scorestack automates the full pipeline:
 ## Enrichment & Delivery Cost Model
 
 ### Enrichment — Platform-managed credentials
-- Enrichment always uses Scorestack's platform LinkedAPI credentials (server env vars)
+- Enrichment always uses Scorestack's platform ConnectSafely credentials (server env vars)
 - No user setup required — works on all plans including free
 - Contact-per-run caps apply per plan (free = 50 contacts)
 - Managed credits are a future add-on: users buy credit packs; Scorestack deducts per enriched contact
 
-### Messaging & Delivery — BYOK (Bring Your Own LinkedAPI Account)
-- LinkedIn message delivery requires the user's own LinkedAPI account
-- Users provide `LINKED_API_TOKEN` + `LINKED_API_ID_TOKEN` in org settings (Settings → Integrations)
+### Messaging & Delivery — BYOK (Bring Your Own ConnectSafely Account)
+- LinkedIn message delivery requires the user's own ConnectSafely API key
+- Users provide their `CONNECT_SAFELY_API_KEY` in org settings (Settings → Integrations)
 - Scorestack stores credentials encrypted per org; all delivery calls use the user's account
-- **Why BYOK for delivery:** LinkedIn ToS and LinkedAPI rate limits make it infeasible for Scorestack to absorb delivery at scale; users are responsible for their own outreach volume
+- **Why BYOK for delivery:** LinkedIn ToS and rate limits make it infeasible for Scorestack to absorb delivery at scale; users are responsible for their own outreach volume
 - Enrichment and delivery are independent — a user can enrich without ever configuring BYOK
 
 ### Credit pack pricing (managed enrichment)
@@ -142,7 +142,7 @@ A verified session is required from the score page onwards. Scored results conta
 | Free | $0 | $0 (user's API) | — |
 | Starter | $29 | Platform-managed (subscription covers cost) | ~$29 |
 | Pro | $49 | Platform-managed (subscription covers cost) | ~$49 |
-| Managed credit (Standard 500-pack) | $25 | ~$10–15 (LinkedAPI cost) | ~$10–15 per pack |
+| Managed credit (Standard 500-pack) | $25 | ~$10–15 (ConnectSafely cost) | ~$10–15 per pack |
 
 Pro was reduced from $79 → $49 because the value prop is now the scoring/export/messaging layer, not enrichment (which is BYOK). This makes the price more competitive while restoring full margin.
 
@@ -175,7 +175,7 @@ Pro was reduced from $79 → $49 because the value prop is now the scoring/expor
 2. **Model limit hit** — shown inline in the Save Model modal: "You've reached your 1-model limit on the free plan. Upgrade to Starter to save up to 5 models." with link to `/settings/billing`.
 3. **Export full results (free)** — Free users receive a top-10 CSV with a hint: "Free plan: top 10 contacts. Upgrade for all." The button always triggers a download — no modal gate.
 4. **AI message generation click (free)** — "AI messages are available on Starter and above."
-5. **Missing LinkedAPI credentials (delivery)** — "Add your LinkedAPI account in Settings → Integrations to start sending messages." (delivery-only gate — does not affect enrichment)
+5. **Missing ConnectSafely credentials (delivery)** — "Add your ConnectSafely API key in Settings → Integrations to start sending messages." (delivery-only gate — does not affect enrichment)
 6. **Delivery scheduler click (free/starter)** — "Delivery automation is available on Pro and above."
 7. **Invite teammate click (free/starter)** — "Team sharing is available on Pro and above."
 
@@ -210,21 +210,21 @@ Pro was reduced from $79 → $49 because the value prop is now the scoring/expor
 5. Redirected to `/run/:id/results` → already authenticated → "Save as model" available immediately
 6. Load scoring model, export full CSV
 7. Generate AI messages for top 100 contacts
-8. Schedule LinkedIn delivery campaign (requires LinkedAPI credentials in Settings → Integrations)
+8. Schedule LinkedIn delivery campaign (requires ConnectSafely API key in Settings → Integrations)
 
-### Journey 3 — Managed Credits (Starter, no LinkedAPI account)
+### Journey 3 — Managed Credits (Starter, no ConnectSafely account)
 1. Sign up, upgrade to Starter
 2. Buy a 500-credit pack ($25)
 3. Upload CSV — enrichment draws from credit balance
 4. Credits counter shown in header ("423 / 500 credits remaining")
-5. On credit exhaustion: prompt to buy another pack or connect own LinkedAPI
+5. On credit exhaustion: prompt to buy another pack or connect own ConnectSafely account
 
 ---
 
 ## Assumptions
 
 - BYOK credentials stored encrypted at rest (`ENCRYPTION_KEY` env var, AES-256)
-- LinkedAPI credentials are per-org (not per-user within the org)
+- ConnectSafely credentials are per-org (not per-user within the org)
 - Managed credit packs are purchased via Lemon Squeezy one-time products (not subscriptions)
 - Free tier hard cap of 50 contacts/run is enforced even with BYOK (platform-level limit)
 - Authentication uses NextAuth.js magic-link email — no OAuth providers in v1
