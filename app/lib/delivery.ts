@@ -14,7 +14,7 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
     include: {
       messages: {
         include: {
-          runResult: { select: { linkedinUrl: true } },
+          runResult: { select: { linkedinUrl: true, enrichedData: true } },
         },
       },
     },
@@ -40,9 +40,11 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
     for (let i = 0; i < job.messages.length; i++) {
       const msg = job.messages[i]
       const intendedRecipient = msg.runResult.linkedinUrl
+      const enriched = msg.runResult.enrichedData as Record<string, unknown> | null
+      const contactName = (enriched?.full_name as string | null | undefined) ?? intendedRecipient
       const personUrl = testMode ? testProfileUrl! : intendedRecipient
       const text = testMode
-        ? `test delivery for ${intendedRecipient}`
+        ? `Test message for: ${contactName}\nMessage: ${msg.editedBody ?? msg.body}\nProfile: ${intendedRecipient}`
         : (msg.editedBody ?? msg.body)
 
       try {
