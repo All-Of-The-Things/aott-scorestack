@@ -4,6 +4,34 @@ import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
 import { generateMessages } from '@/app/lib/messages'
 
+export async function GET(req: NextRequest) {
+  const session = await auth()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(req.url)
+  const runId = searchParams.get('run_id')
+  const templateId = searchParams.get('template_id')
+
+  if (!runId || !templateId) {
+    return NextResponse.json({ error: 'run_id and template_id required' }, { status: 400 })
+  }
+
+  const messages = await prisma.generatedMessage.findMany({
+    where: {
+      templateId,
+      runResult: { runId },
+    },
+    include: {
+      runResult: {
+        select: { id: true, linkedinUrl: true, totalScore: true, rowIndex: true },
+      },
+    },
+    orderBy: { runResult: { totalScore: 'desc' } },
+  })
+
+  return NextResponse.json({ messages })
+}
+
 const STARTER_CAP = 100
 
 const bodySchema = z.object({
