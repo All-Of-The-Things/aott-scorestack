@@ -54,9 +54,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where:  { id: user.id },
           select: { orgId: true, role: true, org: { select: { plan: true } } },
         });
-        orgId = dbUser?.orgId ?? null;
-        role  = (dbUser?.role  ?? "member") as UserRole;
-        plan  = (dbUser?.org?.plan ?? "free") as Plan;
+
+        // Fallback org bootstrap — covers cases where the signIn callback was
+        // skipped (e.g. user.id undefined during email verification request).
+        if (dbUser && !dbUser.orgId) {
+          const org = await prisma.organization.create({
+            data: { name: "My Workspace", plan: "free" as Plan },
+          });
+          await prisma.user.update({
+            where:  { id: user.id },
+            data:   { orgId: org.id, role: "admin" as UserRole },
+          });
+          orgId = org.id;
+          role  = "admin";
+        } else {
+          orgId = dbUser?.orgId ?? null;
+          role  = (dbUser?.role  ?? "member") as UserRole;
+          plan  = (dbUser?.org?.plan ?? "free") as Plan;
+        }
       } catch (err) {
         console.error("[auth] session callback DB read failed (non-fatal):", err);
       }
@@ -78,13 +93,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           select: { orgId: true },
         });
 
-        if (dbUser && !dbUser.orgId) {
+        let orgId: string | null = dbUser?.orgId ?? null;
+
+        if (dbUser && !orgId) {
           const org = await prisma.organization.create({
             data: { name: "My Workspace", plan: "free" as Plan },
           });
           await prisma.user.update({
             where: { id: user.id },
             data: { orgId: org.id, role: "admin" as UserRole },
+          });
+          orgId = org.id;
+        }
+
+        // Claim runs created during unauthenticated enrichment — they were stored
+        // with notifyEmail but no orgId/userId; link them now so they appear in the list.
+        if (orgId && user.email) {
+          await prisma.run.updateMany({
+            where: { notifyEmail: user.email, orgId: null },
+            data: { orgId, userId: user.id },
           });
         }
       } catch (err) {
