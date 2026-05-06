@@ -105,8 +105,6 @@ export default async function RunsPage() {
                       run.totalContacts > 0
                         ? Math.round((run.enrichedCount / run.totalContacts) * 100)
                         : 0
-                    const canViewResults = run.status === 'complete'
-
                     return (
                       <tr key={run.id} className="hover:bg-gray-50/50 transition-colors">
                         {/* File name */}
@@ -144,12 +142,19 @@ export default async function RunsPage() {
 
                         {/* Action */}
                         <td className="pl-3 pr-6 py-3.5 text-right">
-                          {canViewResults ? (
+                          {run.status === 'complete' ? (
                             <Link
                               href={`/run/${run.id}/results`}
                               className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline"
                             >
                               View results →
+                            </Link>
+                          ) : run.status === 'enriching' || run.status === 'scoring' ? (
+                            <Link
+                              href={`/run/${run.id}/score`}
+                              className="text-[11px] font-medium text-blue-500 hover:text-blue-600 hover:underline"
+                            >
+                              View progress →
                             </Link>
                           ) : (
                             <span className="text-[11px] text-gray-300">—</span>

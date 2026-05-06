@@ -12,6 +12,37 @@ const resend = new Resend(process.env.RESEND_API_KEY)
  *
  * Non-fatal: callers should catch errors and log them rather than failing the run.
  */
+export async function sendEnrichmentStarted(
+  email: string,
+  runId: string,
+  contactCount: number,
+): Promise<void> {
+  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://scorestack.io'
+  const progressUrl = `${baseUrl}/auth/signin?callbackUrl=${encodeURIComponent(`/run/${runId}/score`)}`
+
+  await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL ?? 'noreply@scorestack.io',
+    to: email,
+    subject: 'Your Scorestack enrichment has started',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#111;">
+        <h2 style="font-size:18px;font-weight:600;margin:0 0 8px;">Enrichment in progress</h2>
+        <p style="font-size:14px;color:#555;margin:0 0 24px;">
+          We're enriching <strong>${contactCount} contact${contactCount !== 1 ? 's' : ''}</strong> right now.
+          You can safely close your browser — we'll email you again when it's done.
+        </p>
+        <a href="${progressUrl}"
+          style="display:inline-block;background:#2563eb;color:#fff;font-size:14px;font-weight:500;text-decoration:none;padding:10px 20px;border-radius:8px;">
+          Track progress →
+        </a>
+        <p style="font-size:11px;color:#aaa;margin-top:24px;">
+          Clicking the link will send a magic link to this address to sign you in.
+        </p>
+      </div>
+    `,
+  })
+}
+
 export async function sendEnrichmentComplete(email: string, runId: string): Promise<void> {
   const baseUrl = process.env.NEXTAUTH_URL ?? 'https://scorestack.io'
   // Sign in first — results are revealed after authentication.

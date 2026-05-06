@@ -1,8 +1,15 @@
 import { getClient } from './linkedapi'
+import { sendMessage as csSendMessage } from './connectsafely'
 import prisma from './prisma'
 import { sendDeliveryComplete } from './notify'
 
-const DELIVERY_DELAY_MS = parseInt(process.env.DELIVERY_DELAY_MS ?? '3000', 10)
+function resolveDelay(useConnectSafely: boolean): number {
+  const fallback = process.env.DELIVERY_DELAY_MS
+  if (useConnectSafely) {
+    return parseInt(process.env.CONNECT_SAFELY_DELIVERY_DELAY_MS ?? fallback ?? '10000', 10)
+  }
+  return parseInt(process.env.LINKED_API_DELIVERY_DELAY_MS ?? fallback ?? '3000', 10)
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -25,15 +32,25 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
     data: { status: 'running', startedAt: new Date() },
   })
 
-  const client = getClient()
+  const useConnectSafely = process.env.CONNECT_SAFELY_DELIVERY_ENABLED === 'true'
+  const client = useConnectSafely ? null : getClient()
+  const deliveryDelayMs = resolveDelay(useConnectSafely)
   let sentCount = 0
   let failedCount = 0
 
-  const testMode = process.env.LINKED_API_TEST_DELIVERY === 'true'
-  const testProfileUrl = process.env.LINKED_API_TEST_DELIVERY_PROFILE
+  const testMode = useConnectSafely
+    ? process.env.CONNECT_SAFELY_TEST_DELIVERY === 'true'
+    : process.env.LINKED_API_TEST_DELIVERY === 'true'
+  const testProfileUrl = useConnectSafely
+    ? process.env.CONNECT_SAFELY_TEST_DELIVERY_PROFILE
+    : process.env.LINKED_API_TEST_DELIVERY_PROFILE
 
   if (testMode && !testProfileUrl) {
-    throw new Error('LINKED_API_TEST_DELIVERY is enabled but LINKED_API_TEST_DELIVERY_PROFILE is not set')
+    throw new Error(
+      useConnectSafely
+        ? 'CONNECT_SAFELY_TEST_DELIVERY is enabled but CONNECT_SAFELY_TEST_DELIVERY_PROFILE is not set'
+        : 'LINKED_API_TEST_DELIVERY is enabled but LINKED_API_TEST_DELIVERY_PROFILE is not set'
+    )
   }
 
   try {
@@ -48,10 +65,20 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
         : (msg.editedBody ?? msg.body)
 
       try {
-        const workflowId = await client.sendMessage.execute({ personUrl, text })
-        const res = await client.sendMessage.result(workflowId)
+        let success: boolean
+        let errorMsg: string | undefined
 
-        if (res.errors.length === 0) {
+        if (useConnectSafely) {
+          const result = await csSendMessage(personUrl, text)
+          success = result.success
+          errorMsg = result.error
+        } else {
+          const workflowId = await client!.sendMessage.execute({ personUrl, text })
+          const res = await client!.sendMessage.result(workflowId)
+          success = res.errors.length === 0
+        }
+
+        if (success) {
           await prisma.generatedMessage.update({
             where: { id: msg.id },
             data: { deliveryStatus: 'sent', sentAt: new Date() },
@@ -71,6 +98,7 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
             where: { id: jobId },
             data: { failedCount },
           })
+          if (errorMsg) console.error(`[delivery] message ${msg.id} failed: ${errorMsg}`)
         }
       } catch {
         await prisma.generatedMessage.update({
@@ -85,7 +113,7 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
       }
 
       if (i < job.messages.length - 1) {
-        await delay(DELIVERY_DELAY_MS)
+        await delay(deliveryDelayMs)
       }
     }
 
