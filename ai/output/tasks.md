@@ -340,21 +340,47 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
+### Bug fixes (discovered during Phase 9 validation)
+
+- [x] **T-BF1** Schema drift migration — `prisma/migrations/20260429170000_fix_schema_drift/migration.sql`
+  - Added 5 missing columns (`runs.name`, `runs.original_total_contacts`, `plan_limits.export_enabled/messages_enabled/delivery_enabled`)
+  - Seeded correct per-plan values for `plan_limits` boolean columns
+
+- [x] **T-BF2** Auth reliability — `app/lib/auth.ts` session callback fallback org bootstrap
+  - NextAuth v5 signIn callback is skipped during email verificationRequest phase; session callback added as reliable fallback
+  - Both callbacks are idempotent
+
+- [x] **T-BF3** Run claiming — `app/lib/auth.ts` signIn callback + `app/run/[runId]/score/page.tsx` + `app/run/[runId]/results/page.tsx`
+  - signIn callback now runs `updateMany` to claim all orphaned runs matching `notifyEmail`
+  - Score and results pages each claim the specific run as a belt-and-suspenders guard
+
+- [x] **T-BF4** SaveModelButton frontend gate removed — `app/components/SaveModelButton.tsx`
+  - Removed `isFreePlan` gate that incorrectly blocked free users from opening the modal
+  - Backend 409 (`model_limit_reached`) is the sole enforcement point
+
+- [x] **T-BF5** MessagesTab send button plan routing — `app/components/MessagesTab.tsx`
+  - Introduced shared `handleSend(contactIds: string[])` function
+  - Pro/Enterprise → opens DeliverySchedulerModal; Starter and below → shows upgrade modal with `requiredPlan='pro'`
+  - Single `upgradeRequiredPlan` state replaces ad-hoc duplicate modal logic
+  - All props typed with Prisma-generated `Plan` type (no inline string union casts)
+
+---
+
 ### Stage 9a — Delivery (ConnectSafely for message sending)
 
-- [ ] **T-CS1** Install / configure ConnectSafely
+- [x] **T-CS1** Install / configure ConnectSafely
   - Add `CONNECT_SAFELY_API_KEY` to `.env` and `.env.example`
   - Add `CONNECT_SAFELY_DELIVERY_ENABLED` env var (defaults to `false`)
   - No npm package — all calls are plain `fetch`
 
-- [ ] **T-CS2** Create `app/lib/connectsafely.ts`
+- [x] **T-CS2** Create `app/lib/connectsafely.ts`
   - HTTP client singleton reading `CONNECT_SAFELY_API_KEY`; throws on missing key (mirroring `getClient()` in `linkedapi.ts`)
   - `sendMessage(personUrl: string, text: string): Promise<{ success: boolean; error?: string }>`
     - POST to ConnectSafely's message-send endpoint with `Authorization: Bearer CONNECT_SAFELY_API_KEY`
     - Map response to `{ success, error }` — no SDK types exposed outside this file
   - Confirm exact endpoint + request shape against ConnectSafely API docs before implementing
 
-- [ ] **T-CS3** Update `app/lib/delivery.ts`
+- [x] **T-CS3** Update `app/lib/delivery.ts`
   - Import `sendMessage as csSendMessage` from `./connectsafely`
   - At top of `processDeliveryJob`: `const useConnectSafely = process.env.CONNECT_SAFELY_DELIVERY_ENABLED === 'true'`
   - In the per-message send loop, branch:
@@ -368,9 +394,9 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ### Stage 9b — Enrichment (ConnectSafely for profile fetching)
 
-- [ ] **T-CS4** Add `CONNECT_SAFELY_ENRICHMENT_ENABLED` env var to `.env` and `.env.example` (defaults to `false`)
+- [x] **T-CS4** Add `CONNECT_SAFELY_ENRICHMENT_ENABLED` env var to `.env` and `.env.example` (defaults to `false`)
 
-- [ ] **T-CS5** Extend `app/lib/connectsafely.ts`
+- [x] **T-CS5** Extend `app/lib/connectsafely.ts`
   - Add `fetchProfile(linkedinUrl: string): Promise<FetchProfileResult>`
     - Imports `FetchProfileResult` and `LinkedInProfile` from `./linkedapi` (interfaces stay there until Stage 9c)
     - GET / POST to ConnectSafely's enrichment endpoint
@@ -378,7 +404,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
     - Returns `{ status: 'failed', profile: null, error }` on any HTTP error
   - Confirm exact endpoint + response shape against ConnectSafely API docs before implementing
 
-- [ ] **T-CS6** Update `app/lib/linkedapi.ts` → `fetchProfile`
+- [x] **T-CS6** Update `app/lib/linkedapi.ts` → `fetchProfile`
   - Add at the very top of `fetchProfile` (after the mock check):
     ```ts
     if (process.env.CONNECT_SAFELY_ENRICHMENT_ENABLED === 'true') {
@@ -516,15 +542,17 @@ _Execute only after both flags are stable in production_
 | `app/layout.tsx` | 2 | Add Nav + UsageBanner |
 | `app/api/enrich/route.ts` | 4, 5 | Quota check + deferred notify |
 | `app/components/EnrichmentProgress.tsx` | 5 | Two-path UX |
-| `app/run/[runId]/score/page.tsx` | 5 | Polling fallback |
-| `app/run/[runId]/results/page.tsx` | 6, 7 | Export button + Messages tab |
+| `app/run/[runId]/score/page.tsx` | 5, 9 (bug fix) | Polling fallback; run claiming on page load |
+| `app/run/[runId]/results/page.tsx` | 6, 7, 9 (bug fix) | Export button + Messages tab; run claiming on page load |
 | `app/lib/delivery.ts` | 9 | ConnectSafely delivery feature flag |
 | `app/lib/linkedapi.ts` | 9 | ConnectSafely enrichment feature flag guard |
 | `app/api/models/route.ts` | 10, 11 | orgId scope + limit check |
 | `app/api/score/route.ts` | 11 | orgId scope |
 | `app/api/suggest/route.ts` | 11 | orgId scope |
-| `app/components/SaveModelButton.tsx` | 11 | Model limit gate |
-| `app/lib/auth.ts` | 10 | Invite acceptance callback |
+| `app/components/SaveModelButton.tsx` | 9 (bug fix), 11 | Remove incorrect free-plan frontend gate; model limit gate |
+| `app/lib/auth.ts` | 9 (bug fix), 10 | Org bootstrap session fallback + run claiming; invite acceptance callback |
+| `app/components/MessagesTab.tsx` | 9 (bug fix) | Shared handleSend + upgradeRequiredPlan state + Plan typing |
+| `prisma/migrations/20260429170000_fix_schema_drift/migration.sql` | 9 (bug fix) | Schema drift — 5 missing columns + plan_limits seed |
 
 ## New environment variables
 

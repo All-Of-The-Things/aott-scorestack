@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 09 — ConnectSafely replaces LinkedAPI for enrichment + delivery (feature-flagged, staged migration); Teams support deferred to Phase 10_
+_Last refined: SPEC::REFINE Phase 09 (bug fixes) — org bootstrap session callback fallback; run claiming mechanic; SaveModelButton backend-only enforcement; MessagesTab handleSend plan routing_
 
 ## Overview
 
@@ -98,6 +98,7 @@ A verified session is required from the score page onwards. Scored results conta
 - Counts `prisma.scoringModel.count({ where: { userId } })` against `PLAN_MODEL_LIMITS`
 - Returns 409 `model_limit_reached` with `{ limit, plan }` when at capacity
 - `SaveModelModal` shows inline upgrade prompt on 409
+- The frontend (`SaveModelButton`) does NOT gate free users from opening the modal — all authenticated users can attempt to save. The backend 409 is the only enforcement point, ensuring the limit is plan-accurate regardless of UI state.
 
 ### Starter — $29 / month
 - Platform-managed enrichment — monthly subscription covers enrichment costs, no credit balance required

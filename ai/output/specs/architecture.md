@@ -111,6 +111,8 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 1. User chooses "Notify me" in `EnrichmentChoice`, enters email → stored as `Run.notifyEmail`, passed in `POST /api/enrich` body
 2. Enrichment completes → `sendEnrichmentComplete()` sends one CTA: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:id/score`
 3. User clicks link → `/auth/signin` → enters email → `SignInForm` wraps callbackUrl through `/auth/confirmed?next=/run/:id/score` → magic link sent → user clicks → session created → `/auth/confirmed` shows confirmation → auto-redirects to score page
+4. On sign-in: the signIn callback runs `prisma.run.updateMany({ where: { notifyEmail: user.email, orgId: null } })` to claim all matching orphaned runs at once
+5. Belt-and-suspenders: `/run/:id/score` and `/run/:id/results` each call `prisma.run.update` on the specific run if its orgId is still null and the session user's email matches
 
 ### Middleware protection
 - `middleware.ts` only protects auth-required routes (listed above)
@@ -118,10 +120,12 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 - API routes that need auth use `auth()` from `next-auth` server-side and return `401` if missing
 
 ### Org bootstrapping
-- On first sign-in, a `User` row is created by NextAuth's Prisma adapter
-- A post-sign-in callback creates a default `Organization` for the user (plan: `free`, `role: admin`)
+- On first sign-in a `User` row is created by NextAuth's Prisma adapter
+- **signIn callback** (best-effort): attempts to create the org and link the user immediately; also runs `prisma.run.updateMany` to claim any orphaned runs whose `notifyEmail` matches the user's email (`orgId: null → orgId`)
+- **Session callback fallback** (reliable): re-reads the user from DB on every session request; if `orgId` is still null (can happen when the signIn callback is skipped during NextAuth v5 email provider's verificationRequest phase), bootstraps the org and links the user there instead
+- Both paths are idempotent — whichever fires first wins; the other is a no-op
 - Subsequent invites link new users to an existing `orgId`
-- Anonymous runs (`Run.userId = null`, `Run.orgId = null`) are not associated with any org until sign-in
+- Anonymous runs (`Run.userId = null`, `Run.orgId = null`) are claimed either in the signIn callback (on first session) or at the score/results pages (belt-and-suspenders: if orgId is still null when those pages load and the authenticated user's email matches `Run.notifyEmail`, the run is claimed there)
 
 ---
 
@@ -365,7 +369,20 @@ Vercel applies migrations before swapping traffic, so the old code is still live
 | Drop column still used by current code | ❌ | Remove from code first, deploy, then drop |
 | Change column type without compatible cast | ❌ | Two-step with a temporary column |
 
-**Never use `prisma db push` in production.** It bypasses the migration history, silently drops objects, and leaves the DB in a state that `migrate deploy` cannot reconcile.
+**Never use `prisma db push` in production or development once migrations are in use.** It bypasses the migration history, silently skips generating a file, and leaves the DB in a state that `migrate deploy` cannot reconcile — columns added via `db push` vanish after the next `migrate reset` or fresh deploy. Always use `prisma migrate dev` to generate the migration file, then commit it with the PR.
+
+### Seed data
+
+Reference data (e.g. `plan_limits` rows) lives **inline in migration SQL**, not in a separate seed script. This ensures every fresh reset and every new environment (staging, prod) gets the correct data automatically, in the right order, without a manual step.
+
+```sql
+-- Example: seed plan limits inside the migration that creates the table
+INSERT INTO "plan_limits" ("plan", "run_limit", ...) VALUES
+  ('free', 50, ...),
+  ('pro',  -1, ...);
+```
+
+When adding columns to an existing seeded table, include `UPDATE` statements in the same migration to set the correct values for pre-existing rows.
 
 ---
 
