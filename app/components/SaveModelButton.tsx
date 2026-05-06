@@ -5,8 +5,6 @@ import { useSession, signIn } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import type { Criterion } from '@/app//lib/scoring'
 import SaveModelModal from '@/app/components/SaveModelModal'
-import UpgradeModal from '@/app/components/UpgradeModal'
-import { isFreePlan } from '@/app/lib/planUtils'
 
 interface SaveModelButtonProps {
   criteria: Criterion[]
@@ -21,7 +19,7 @@ interface SaveModelButtonProps {
   knownEmail?: string
 }
 
-export default function SaveModelButton({ criteria, savedModelName, plan, runId, knownEmail }: SaveModelButtonProps) {
+export default function SaveModelButton({ criteria, savedModelName, runId, knownEmail }: SaveModelButtonProps) {
   const { status } = useSession()
   const pathname = usePathname()
   const [showModal, setShowModal] = useState(false)
@@ -29,7 +27,6 @@ export default function SaveModelButton({ criteria, savedModelName, plan, runId,
   const [linkSent, setLinkSent] = useState(false)
   const [sendingLink, setSendingLink] = useState(false)
   const [linkError, setLinkError] = useState(false)
-  const [upgradeRequired, setUpgradeRequired] = useState(false)
 
   const handleSaved = (_modelId: string, name: string) => {
     setShowModal(false)
@@ -137,33 +134,7 @@ export default function SaveModelButton({ criteria, savedModelName, plan, runId,
     )
   }
 
-  // Authenticated — check plan gate
-  const canSave = !plan || !isFreePlan(plan)
-
-  if (!canSave) {
-    return (
-      <>
-        <button
-          onClick={() => setUpgradeRequired(true)}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
-        >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-          </svg>
-          Save as model
-        </button>
-        <UpgradeModal
-          trigger="Save this scoring criteria as a reusable model"
-          requiredPlan="starter"
-          isOpen={upgradeRequired}
-          onClose={() => setUpgradeRequired(false)}
-          currentPlan={plan as 'free' | 'starter' | 'pro' | 'enterprise'}
-        />
-      </>
-    )
-  }
-
-  // Authenticated + allowed — full save flow
+  // Authenticated — full save flow (backend enforces per-plan model limit via 409)
   return (
     <>
       <button
