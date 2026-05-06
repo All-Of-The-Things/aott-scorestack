@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 interface Props {
   runId: string
+  templateId: string
   messageCount: number
   contactIds?: string[]
   isOpen: boolean
@@ -11,7 +12,7 @@ interface Props {
   onScheduled: (jobId: string) => void
 }
 
-export default function DeliverySchedulerModal({ runId, messageCount, contactIds, isOpen, onClose, onScheduled }: Props) {
+export default function DeliverySchedulerModal({ runId, templateId, messageCount, contactIds, isOpen, onClose, onScheduled }: Props) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -26,6 +27,7 @@ export default function DeliverySchedulerModal({ runId, messageCount, contactIds
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           run_id: runId,
+          template_id: templateId,
           ...(contactIds?.length ? { contact_ids: contactIds } : {}),
         }),
       })
