@@ -46,6 +46,16 @@ export default async function ScorePage({ params }: ScorePageProps) {
     redirect(`/auth/signin?callbackUrl=/run/${runId}/score`)
   }
 
+  // Claim this run if it was created anonymously (orgId null) and the
+  // authenticated user's email matches the notifyEmail stored on it.
+  // This is the reliable claim point — session is confirmed, runId is known.
+  if (!run.orgId && session.user.orgId && run.notifyEmail && run.notifyEmail === session.user.email) {
+    await prisma.run.update({
+      where: { id: runId },
+      data: { orgId: session.user.orgId, userId: session.user.id },
+    })
+  }
+
   if (run.status === 'enriching') {
     return (
       <>
