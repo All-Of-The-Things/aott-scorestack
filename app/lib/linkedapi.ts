@@ -1,5 +1,6 @@
 import LinkedApi, { LinkedApiError } from '@linkedapi/node'
 import { enrichMock } from '../mocks/enrich'
+import { fetchProfile as csFetchProfile } from './connectsafely'
 
 export interface LinkedInProfile {
   linkedin_url: string
@@ -61,6 +62,10 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
       status: 'success',
       profile: enrichMock(),
     };
+  }
+
+  if (process.env.CONNECT_SAFELY_ENRICHMENT_ENABLED === 'true') {
+    return csFetchProfile(linkedinUrl)
   }
 
   if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) {

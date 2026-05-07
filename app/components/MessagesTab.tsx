@@ -6,6 +6,7 @@ import MessageTemplateModal, { type MessageTemplate } from './MessageTemplateMod
 import UpgradeModal from './UpgradeModal'
 import DeliverySchedulerModal from './DeliverySchedulerModal'
 import { isFreePlan } from '@/app/lib/planUtils'
+import type { Plan } from '@/app/generated/prisma'
 
 interface GeneratedMessage {
   id: string
@@ -22,7 +23,7 @@ interface GeneratedMessage {
 
 interface Props {
   runId: string
-  plan: string
+  plan: Plan
 }
 
 type TabState =
@@ -39,6 +40,7 @@ export default function MessagesTab({ runId, plan }: Props) {
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | undefined>()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [upgradeRequiredPlan, setUpgradeRequiredPlan] = useState<'starter' | 'pro'>('starter')
   const [showSchedulerModal, setShowSchedulerModal] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -193,6 +195,16 @@ export default function MessagesTab({ runId, plan }: Props) {
     })
   }
 
+  function handleSend(contactIds: string[]) {
+    if (plan === 'pro' || plan === 'enterprise') {
+      setSelectedIds(new Set(contactIds))
+      setShowSchedulerModal(true)
+    } else {
+      setUpgradeRequiredPlan('pro')
+      setShowUpgradeModal(true)
+    }
+  }
+
   // ── Loading ──────────────────────────────────────────────────────────────
   if (state.kind === 'loading') {
     return (
@@ -218,7 +230,7 @@ export default function MessagesTab({ runId, plan }: Props) {
           </p>
           <button
             onClick={() => {
-              if (isFree) { setShowUpgradeModal(true) } else { setEditingTemplate(undefined); setShowTemplateModal(true) }
+              if (isFree) { setUpgradeRequiredPlan('starter'); setShowUpgradeModal(true) } else { setEditingTemplate(undefined); setShowTemplateModal(true) }
             }}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
@@ -238,6 +250,7 @@ export default function MessagesTab({ runId, plan }: Props) {
           showUpgradeModal={showUpgradeModal}
           onCloseUpgradeModal={() => setShowUpgradeModal(false)}
           currentPlan={plan}
+          upgradeRequiredPlan={upgradeRequiredPlan}
         />
       </>
     )
@@ -312,7 +325,7 @@ export default function MessagesTab({ runId, plan }: Props) {
 
           {isFree ? (
             <button
-              onClick={() => setShowUpgradeModal(true)}
+              onClick={() => { setUpgradeRequiredPlan('starter'); setShowUpgradeModal(true) }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -352,6 +365,7 @@ export default function MessagesTab({ runId, plan }: Props) {
           showUpgradeModal={showUpgradeModal}
           onCloseUpgradeModal={() => setShowUpgradeModal(false)}
           currentPlan={plan}
+          upgradeRequiredPlan={upgradeRequiredPlan}
         />
       </>
     )
@@ -433,13 +447,7 @@ export default function MessagesTab({ runId, plan }: Props) {
             Clear
           </button>
           <button
-            onClick={() => {
-              if (plan !== 'pro' && plan !== 'enterprise') {
-                setShowUpgradeModal(true)
-              } else {
-                setShowSchedulerModal(true)
-              }
-            }}
+            onClick={() => handleSend(Array.from(selectedIds))}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -560,14 +568,7 @@ export default function MessagesTab({ runId, plan }: Props) {
                           </button>
                         )}
                         <button
-                          onClick={() => {
-                            if (plan !== 'pro' && plan !== 'enterprise') {
-                              setShowUpgradeModal(true)
-                            } else {
-                              setSelectedIds(new Set([msg.runResult.id]))
-                              setShowSchedulerModal(true)
-                            }
-                          }}
+                          onClick={() => handleSend([msg.runResult.id])}
                           title={plan === 'pro' || plan === 'enterprise' ? 'Send via LinkedIn' : 'Send via LinkedIn — Pro feature'}
                           className="px-2.5 py-1 text-[11px] text-gray-500 hover:text-gray-700 border border-gray-200 rounded-md transition-colors inline-flex items-center gap-1"
                         >
@@ -597,9 +598,11 @@ export default function MessagesTab({ runId, plan }: Props) {
         showUpgradeModal={showUpgradeModal}
         onCloseUpgradeModal={() => setShowUpgradeModal(false)}
         currentPlan={plan}
+        upgradeRequiredPlan={upgradeRequiredPlan}
       />
       <DeliverySchedulerModal
         runId={runId}
+        templateId={activeTemplate?.id ?? ''}
         messageCount={selectedIds.size}
         contactIds={Array.from(selectedIds)}
         isOpen={showSchedulerModal}
@@ -623,15 +626,17 @@ function Modals({
   showUpgradeModal,
   onCloseUpgradeModal,
   currentPlan,
+  upgradeRequiredPlan,
 }: {
   showTemplateModal: boolean
   onCloseTemplateModal: () => void
   onTemplateSaved: (t: MessageTemplate) => void
   editingTemplate: MessageTemplate | undefined
-  plan: string
+  plan: Plan
   showUpgradeModal: boolean
   onCloseUpgradeModal: () => void
-  currentPlan: string
+  currentPlan: Plan
+  upgradeRequiredPlan: 'starter' | 'pro'
 }) {
   return (
     <>
@@ -643,11 +648,11 @@ function Modals({
         initial={editingTemplate}
       />
       <UpgradeModal
-        trigger="Generate personalised messages"
-        requiredPlan="starter"
+        trigger={upgradeRequiredPlan === 'pro' ? 'Send LinkedIn messages' : 'Generate personalised messages'}
+        requiredPlan={upgradeRequiredPlan}
         isOpen={showUpgradeModal}
         onClose={onCloseUpgradeModal}
-        currentPlan={currentPlan as 'free' | 'starter' | 'pro' | 'enterprise'}
+        currentPlan={currentPlan}
       />
     </>
   )

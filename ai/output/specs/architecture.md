@@ -9,10 +9,9 @@
 | Database | PostgreSQL via Prisma ORM |
 | File storage | Vercel Blob |
 | AI / LLM | Anthropic SDK (Claude) |
-| LinkedIn enrichment | @linkedapi/node SDK (platform credentials from env vars — no user setup required) |
+| LinkedIn enrichment + delivery | ConnectSafely REST API (platform API key from env var; BYOK for delivery) |
 | Email | Resend (magic-link auth + enrichment notifications only) |
 | Payments | Lemon Squeezy (subscriptions + one-time credit packs; MoR, Uruguay-safe) |
-| LinkedIn delivery | @linkedapi/node SDK (BYOK — user's own LinkedAPI credentials stored encrypted per org) |
 | Deployment | Vercel |
 
 ---
@@ -52,7 +51,7 @@
        │
 ┌──────▼──────────────────────────────────┐
 │  External services (called from API)   │
-│  @linkedapi/node  — enrichment + messaging      │
+│  ConnectSafely REST API — enrichment + messaging│
 │  Resend           — auth + notifications email  │
 │  Lemon Squeezy    — billing (MoR, Uruguay-safe) │
 └─────────────────────────────────────────┘
@@ -112,6 +111,8 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 1. User chooses "Notify me" in `EnrichmentChoice`, enters email → stored as `Run.notifyEmail`, passed in `POST /api/enrich` body
 2. Enrichment completes → `sendEnrichmentComplete()` sends one CTA: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:id/score`
 3. User clicks link → `/auth/signin` → enters email → `SignInForm` wraps callbackUrl through `/auth/confirmed?next=/run/:id/score` → magic link sent → user clicks → session created → `/auth/confirmed` shows confirmation → auto-redirects to score page
+4. On sign-in: the signIn callback runs `prisma.run.updateMany({ where: { notifyEmail: user.email, orgId: null } })` to claim all matching orphaned runs at once
+5. Belt-and-suspenders: `/run/:id/score` and `/run/:id/results` each call `prisma.run.update` on the specific run if its orgId is still null and the session user's email matches
 
 ### Middleware protection
 - `middleware.ts` only protects auth-required routes (listed above)
@@ -119,10 +120,12 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 - API routes that need auth use `auth()` from `next-auth` server-side and return `401` if missing
 
 ### Org bootstrapping
-- On first sign-in, a `User` row is created by NextAuth's Prisma adapter
-- A post-sign-in callback creates a default `Organization` for the user (plan: `free`, `role: admin`)
+- On first sign-in a `User` row is created by NextAuth's Prisma adapter
+- **signIn callback** (best-effort): attempts to create the org and link the user immediately; also runs `prisma.run.updateMany` to claim any orphaned runs whose `notifyEmail` matches the user's email (`orgId: null → orgId`)
+- **Session callback fallback** (reliable): re-reads the user from DB on every session request; if `orgId` is still null (can happen when the signIn callback is skipped during NextAuth v5 email provider's verificationRequest phase), bootstraps the org and links the user there instead
+- Both paths are idempotent — whichever fires first wins; the other is a no-op
 - Subsequent invites link new users to an existing `orgId`
-- Anonymous runs (`Run.userId = null`, `Run.orgId = null`) are not associated with any org until sign-in
+- Anonymous runs (`Run.userId = null`, `Run.orgId = null`) are claimed either in the signIn callback (on first session) or at the score/results pages (belt-and-suspenders: if orgId is still null when those pages load and the authenticated user's email matches `Run.notifyEmail`, the run is claimed there)
 
 ---
 
@@ -258,9 +261,9 @@ Prompt caching: system prompt is cached per template — only the per-contact us
 
 ## Delivery Architecture
 
-### LinkedIn messaging (LinkedAPI)
+### LinkedIn messaging (ConnectSafely)
 
-LinkedAPI uses the same async workflow pattern as profile enrichment (`execute` → poll `result`).
+ConnectSafely is a REST API accessed via plain `fetch` with `Authorization: Bearer CONNECT_SAFELY_API_KEY`. There is no SDK.
 
 ```
 POST /api/delivery/jobs { run_id, contact_ids? }
@@ -273,11 +276,10 @@ POST /api/delivery/jobs { run_id, contact_ids? }
 processDeliveryJob(jobId, notifyEmail):
   └── Set DeliveryJob.status = 'running', startedAt
   └── For each GeneratedMessage (sequential):
-        └── client.sendMessage.execute({
-              personUrl: runResult.linkedinUrl,   ← SDK param name (not recipientUrl)
-              text:      editedBody ?? body        ← SDK param name (not message)
+        └── connectsafely.sendMessage({
+              personUrl: runResult.linkedinUrl,
+              text:      editedBody ?? body
             })
-        └── Poll client.sendMessage.result(workflowId)
         └── On success: GeneratedMessage.sentAt = now(), deliveryStatus = 'sent', sentCount++
         └── On failure: deliveryStatus = 'failed', failedCount++
         └── Delay DELIVERY_DELAY_MS (default 3000ms)
@@ -285,9 +287,18 @@ processDeliveryJob(jobId, notifyEmail):
   └── sendDeliveryComplete(notifyEmail, jobId, sentCount, failedCount) — non-fatal
 ```
 
+### Migration co-existence (Phase 9 transition)
+
+During the staged migration, both LinkedAPI and ConnectSafely can be active simultaneously via feature flags:
+
+- `CONNECT_SAFELY_DELIVERY_ENABLED=true` → delivery uses ConnectSafely; else LinkedAPI (legacy fallback)
+- `CONNECT_SAFELY_ENRICHMENT_ENABLED=true` → enrichment uses ConnectSafely; else LinkedAPI (legacy fallback)
+
+Once both flags are stable in production, LinkedAPI is removed entirely (Stage 9c).
+
 ### Test mode
 
-When `LINKED_API_TEST_DELIVERY=true`, all messages are redirected to `LINKED_API_TEST_DELIVERY_PROFILE` with body `"test delivery for {actualRecipientUrl}"`. Notifications fire normally.
+When `LINKED_API_TEST_DELIVERY=true`, all messages are redirected to `LINKED_API_TEST_DELIVERY_PROFILE` with body `"test delivery for {actualRecipientUrl}"`. This flag works with both ConnectSafely and the LinkedAPI fallback. Notifications fire normally.
 
 ### Live progress (client)
 
@@ -303,8 +314,8 @@ Job-level counts (`sentCount`, `failedCount`, status) are polled every **10 seco
 Only "Send now" is implemented. `scheduledAt` is never written. A "Schedule for later" UI teaser exists in `DeliverySchedulerModal` (coming-soon, non-interactive).
 
 **Notes:**
-- LinkedAPI credentials (`LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`) are reused from enrichment — no additional credentials required from the user
-- Delivery is serialised (one message at a time per credential set) to respect LinkedIn rate limits
+- `CONNECT_SAFELY_API_KEY` is the single credential for both enrichment and delivery (platform-managed)
+- Delivery is serialised (one message at a time) to respect LinkedIn rate limits
 - `DeliveryJob.channel` field is retained in the schema for future email channel addition; only `linkedin` is implemented in v1
 - `OrgIntegration` model exists in schema for future BYOK credential support; unused in v1
 
@@ -358,7 +369,20 @@ Vercel applies migrations before swapping traffic, so the old code is still live
 | Drop column still used by current code | ❌ | Remove from code first, deploy, then drop |
 | Change column type without compatible cast | ❌ | Two-step with a temporary column |
 
-**Never use `prisma db push` in production.** It bypasses the migration history, silently drops objects, and leaves the DB in a state that `migrate deploy` cannot reconcile.
+**Never use `prisma db push` in production or development once migrations are in use.** It bypasses the migration history, silently skips generating a file, and leaves the DB in a state that `migrate deploy` cannot reconcile — columns added via `db push` vanish after the next `migrate reset` or fresh deploy. Always use `prisma migrate dev` to generate the migration file, then commit it with the PR.
+
+### Seed data
+
+Reference data (e.g. `plan_limits` rows) lives **inline in migration SQL**, not in a separate seed script. This ensures every fresh reset and every new environment (staging, prod) gets the correct data automatically, in the right order, without a manual step.
+
+```sql
+-- Example: seed plan limits inside the migration that creates the table
+INSERT INTO "plan_limits" ("plan", "run_limit", ...) VALUES
+  ('free', 50, ...),
+  ('pro',  -1, ...);
+```
+
+When adding columns to an existing seeded table, include `UPDATE` statements in the same migration to set the correct values for pre-existing rows.
 
 ---
 
@@ -377,6 +401,8 @@ LEMONSQUEEZY_STORE_ID=
 LEMONSQUEEZY_STARTER_VARIANT_ID=
 LEMONSQUEEZY_PRO_VARIANT_ID=
 
-# LinkedAPI keys already in env (reused for delivery — no new vars needed)
-# LINKED_API_TOKEN and LINKED_API_ID_TOKEN cover both enrichment + messaging
+CONNECT_SAFELY_API_KEY=             # ConnectSafely REST API key (enrichment + messaging)
+# Migration flags (Phase 9 transition — remove once both are stable in production)
+CONNECT_SAFELY_DELIVERY_ENABLED=    # true = use ConnectSafely for delivery (false = LinkedAPI fallback)
+CONNECT_SAFELY_ENRICHMENT_ENABLED=  # true = use ConnectSafely for enrichment (false = LinkedAPI fallback)
 ```

@@ -36,14 +36,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Pro plan required' }, { status: 403 })
   }
 
-  const body = await req.json() as { run_id?: string; contact_ids?: string[] }
-  const { run_id, contact_ids } = body
+  const body = await req.json() as { run_id?: string; template_id?: string; contact_ids?: string[] }
+  const { run_id, template_id, contact_ids } = body
 
   if (!run_id) return NextResponse.json({ error: 'run_id required' }, { status: 400 })
+  if (!template_id) return NextResponse.json({ error: 'template_id required' }, { status: 400 })
 
   const messages = await prisma.generatedMessage.findMany({
     where: {
       runResult: { runId: run_id },
+      templateId: template_id,
       deliveryStatus: 'pending',
       ...(contact_ids?.length ? { runResultId: { in: contact_ids } } : {}),
     },

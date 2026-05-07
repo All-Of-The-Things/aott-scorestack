@@ -6,7 +6,7 @@ import { getPlanLimitsFor } from '@/app/lib/quota'
 import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
-import { sendEnrichmentComplete } from '@/app/lib/notify'
+import { sendEnrichmentComplete, sendEnrichmentStarted } from '@/app/lib/notify'
 import { InputJsonObject } from '@prisma/client/runtime/client'
 import { get } from '@vercel/blob'
 
@@ -87,8 +87,24 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
+      // Track whether the client is still connected. When the user navigates
+      // away (ECONNRESET / abort), send() becomes a no-op but enrichment
+      // continues in the background so the notify-me email still fires.
+      let clientConnected = true
+      request.signal.addEventListener('abort', () => { clientConnected = false })
+
       const send = (data: object) => {
-        controller.enqueue(encoder.encode(sseMessage(data)))
+        if (!clientConnected) return
+        try {
+          controller.enqueue(encoder.encode(sseMessage(data)))
+        } catch {
+          clientConnected = false
+        }
+      }
+
+      const closeStream = () => {
+        if (!clientConnected) return
+        try { controller.close() } catch { /* already closed */ }
       }
 
       // Create run record
@@ -111,7 +127,7 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.error('Error creating run record:', err)
         send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : String(err) })
-        controller.close()
+        closeStream()
         return
       }
 
@@ -135,7 +151,7 @@ export async function POST(request: NextRequest) {
         const message = err instanceof Error ? err.message : 'Failed to fetch CSV from blob'
         await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
         send({ type: 'error', message })
-        controller.close()
+        closeStream()
         return
       }
 
@@ -148,7 +164,7 @@ export async function POST(request: NextRequest) {
         const message = err instanceof Error ? err.message : 'CSV parse failed'
         await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
         send({ type: 'error', message })
-        controller.close()
+        closeStream()
         return
       }
 
@@ -174,6 +190,15 @@ export async function POST(request: NextRequest) {
       }
       // Subscribed plans (starter / pro / enterprise) enrich freely —
       // the monthly subscription covers enrichment, no credit balance required.
+
+      // Send enrichment-started email so the user has a link before navigating away
+      if (notify_email) {
+        try {
+          await sendEnrichmentStarted(notify_email, runId, rows.length)
+        } catch (err) {
+          console.error('[enrich] Failed to send start email:', err)
+        }
+      }
 
       let enrichedCount = 0
       let failedCount = 0
@@ -263,7 +288,7 @@ export async function POST(request: NextRequest) {
       }
 
       send({ type: 'complete', run_id: runId })
-      controller.close()
+      closeStream()
     },
   })
 

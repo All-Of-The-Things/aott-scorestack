@@ -67,6 +67,15 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
   ])
   if (!run) notFound()
 
+  // Claim this run if it was created anonymously and the authenticated user's
+  // email matches the notifyEmail stored on it.
+  if (session && !run.orgId && session.user.orgId && run.notifyEmail && run.notifyEmail === session.user.email) {
+    await prisma.run.update({
+      where: { id: runId },
+      data: { orgId: session.user.orgId, userId: session.user.id },
+    })
+  }
+
   if (!session) {
     const signInUrl = `/auth/signin?callbackUrl=/run/${runId}/results`
     return (
