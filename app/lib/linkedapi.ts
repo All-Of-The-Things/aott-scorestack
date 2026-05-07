@@ -1,6 +1,6 @@
 import LinkedApi, { LinkedApiError } from '@linkedapi/node'
 import { enrichMock } from '../mocks/enrich'
-import { fetchProfile as csFetchProfile } from './connectsafely'
+import { fetchProfile as csFetchProfile, deriveSeniority } from './connectsafely'
 
 export interface LinkedInProfile {
   linkedin_url: string
@@ -57,15 +57,15 @@ export function getClient(): LinkedApi {
 // ---------------------------------------------------------------------------
 
 export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileResult> {
+  if (process.env.CONNECT_SAFELY_ENRICHMENT_ENABLED === 'true') {
+    return csFetchProfile(linkedinUrl)
+  }
+
   if (process.env.LINKED_API_ENABLED !== 'true') {
     return {
       status: 'success',
       profile: enrichMock(),
     };
-  }
-
-  if (process.env.CONNECT_SAFELY_ENRICHMENT_ENABLED === 'true') {
-    return csFetchProfile(linkedinUrl)
   }
 
   if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) {
@@ -100,11 +100,27 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
       full_name: person.name || null,
       headline: person.headline || null,
       current_title: person.position || null,
-      seniority: null,
+      seniority: deriveSeniority(person.position || null),
       company_name: person.companyName || null,
       industry: null,
       company_size: null,
       location: person.location || null,
+    }
+
+    if (person.companyHashedUrl) {
+      try {
+        const companyWorkflowId = await client.fetchCompany.execute({
+          companyUrl: person.companyHashedUrl,
+        })
+        const companyResult = await client.fetchCompany.result(companyWorkflowId)
+        if (companyResult.errors.length === 0 && companyResult.data) {
+          const co = companyResult.data
+          profile.industry = co.industry || null
+          profile.company_size = co.employeesCount != null ? String(co.employeesCount) : null
+        }
+      } catch {
+        console.warn("Failed to fetch company data for URL:", person.companyHashedUrl)
+      }
     }
 
     return { status: 'success', profile }

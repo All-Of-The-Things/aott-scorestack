@@ -66,6 +66,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
   )
   const [suggesting, setSuggesting] = useState(false)
   const [scoring, setScoring] = useState(false)
+  const [confirmingScore, setConfirmingScore] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [scoreError, setScoreError] = useState<string | null>(null)
 
@@ -134,18 +135,38 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
   const totalWeight = criteria.reduce((sum, c) => sum + (c.weight || 0), 0)
   const weightsValid = criteria.length === 0 || totalWeight === 100
 
+  // Fields referenced in criteria that have no enriched data in this run.
+  const noDataFields = Array.from(new Set(
+    criteria.map((c) => c.field).filter((f) => !availableFields.includes(f))
+  ))
+  const scorableCriteria = criteria.filter((c) => availableFields.includes(c.field))
+
   // ---------------------------------------------------------------------------
   // Submit for scoring
   // ---------------------------------------------------------------------------
-  async function handleScore() {
-    if (!weightsValid || criteria.length === 0) return
+
+  // Scale weights of remaining criteria so they sum to exactly 100.
+  function normalizeWeights(items: Criterion[]): Criterion[] {
+    const total = items.reduce((s, c) => s + (c.weight || 0), 0)
+    if (total === 0) return items
+    const scaled = items.map((c) => ({ ...c, weight: Math.round((c.weight / total) * 10000) / 100 }))
+    const partialSum = scaled.slice(0, -1).reduce((s, c) => s + c.weight, 0)
+    scaled[scaled.length - 1] = { ...scaled[scaled.length - 1], weight: Math.round((100 - partialSum) * 100) / 100 }
+    return scaled
+  }
+
+  async function doScore() {
     setScoring(true)
+    setConfirmingScore(false)
     setScoreError(null)
+    const submitCriteria = noDataFields.length > 0 && scorableCriteria.length > 0
+      ? normalizeWeights(scorableCriteria)
+      : criteria
     try {
       const res = await fetch('/api/score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_id: runId, criteria }),
+        body: JSON.stringify({ run_id: runId, criteria: submitCriteria }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -160,10 +181,76 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
     }
   }
 
+  function handleScore() {
+    if (!weightsValid || criteria.length === 0) return
+    if (noDataFields.length > 0) { setConfirmingScore(true); return }
+    doScore()
+  }
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
   return (
+    <>
+    {/* No-data warning modal */}
+    {confirmingScore && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+        onClick={() => setConfirmingScore(false)}
+      >
+        <div
+          className="bg-white rounded-2xl shadow-sm border border-gray-200 w-full max-w-sm mx-4 p-6"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-800">Missing field data</h2>
+            <button
+              onClick={() => setConfirmingScore(false)}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 mb-3">
+            The following fields have no enriched data for this run and will be removed from scoring:
+          </p>
+          <div className="flex flex-wrap gap-1.5 mb-4">
+            {noDataFields.map((f) => (
+              <span key={f} className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-lg">
+                {FIELD_LABELS[f] ?? f}
+              </span>
+            ))}
+          </div>
+          {scorableCriteria.length > 0 ? (
+            <p className="text-xs text-gray-400 mb-5">
+              Remaining criteria weights will be adjusted proportionally.
+            </p>
+          ) : (
+            <p className="text-xs text-red-600 mb-5">
+              All criteria reference unavailable fields. Add criteria using available fields to score.
+            </p>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setConfirmingScore(false)}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={doScore}
+              disabled={scorableCriteria.length === 0}
+              className="text-xs font-medium text-white bg-gray-900 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-1.5 rounded-lg transition-colors"
+            >
+              Score anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
@@ -203,12 +290,22 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
             >
               {/* Field */}
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">Field</label>
+                <label className="flex items-center gap-1 text-[10px] text-gray-400 mb-1">
+                  Field
+                  {!availableFields.includes(criterion.field) && (
+                    <span className="text-[9px] font-medium text-amber-600 bg-amber-50 border border-amber-100 px-1 rounded">no data</span>
+                  )}
+                </label>
                 <select
                   value={criterion.field}
                   onChange={(e) => updateCriterion(i, { field: e.target.value })}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
                 >
+                  {!availableFields.includes(criterion.field) && (
+                    <option value={criterion.field} disabled>
+                      {FIELD_LABELS[criterion.field] ?? criterion.field}
+                    </option>
+                  )}
                   {availableFields.map((f) => (
                     <option key={f} value={f}>{FIELD_LABELS[f] ?? f}</option>
                   ))}
@@ -340,5 +437,6 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
         {scoring ? 'Scoring…' : 'Score contacts →'}
       </button>
     </div>
+    </>
   )
 }
