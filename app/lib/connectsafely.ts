@@ -1,6 +1,18 @@
 import type { FetchProfileResult, LinkedInProfile } from './linkedapi'
 
 const CS_BASE_URL = 'https://api.connectsafely.ai'
+const MAX_SEND_RETRIES = 2
+const RETRY_DELAY_MS = 3_000
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isRetryableSendError(status: number, message: string): boolean {
+  if (status >= 500) return true
+  if (message.toLowerCase().includes('redirect')) return true
+  return false
+}
 
 function getApiKey(): string {
   const key = process.env.CONNECT_SAFELY_API_KEY
@@ -26,23 +38,38 @@ export async function sendMessage(
     return { success: false, error: `Cannot extract profile ID from URL: ${personUrl}` }
   }
 
-  const res = await fetch(`${CS_BASE_URL}/linkedin/messaging/send`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ recipientProfileId: profileId, message: text }),
-  })
+  let lastError: string | undefined
 
-  const data = await res.json().catch(() => ({}))
+  for (let attempt = 0; attempt <= MAX_SEND_RETRIES; attempt++) {
+    if (attempt > 0) await sleep(RETRY_DELAY_MS)
 
-  if (!res.ok || data.success === false) {
-    const msg = data.message ?? data.errorDetails?.message ?? data.error ?? res.statusText
-    return { success: false, error: `ConnectSafely ${res.status}: ${msg}` }
+    try {
+      const res = await fetch(`${CS_BASE_URL}/linkedin/messaging/send`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ recipientProfileId: profileId, message: text }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok || data.success === false) {
+        const msg = data.message ?? data.errorDetails?.message ?? data.error ?? res.statusText
+        lastError = `ConnectSafely ${res.status}: ${msg}`
+        if (attempt < MAX_SEND_RETRIES && isRetryableSendError(res.status, msg)) continue
+        return { success: false, error: lastError }
+      }
+
+      return { success: true }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : 'Network error'
+      if (attempt < MAX_SEND_RETRIES) continue
+    }
   }
 
-  return { success: true }
+  return { success: false, error: lastError }
 }
 
 export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileResult> {

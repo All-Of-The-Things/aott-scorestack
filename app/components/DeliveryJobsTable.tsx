@@ -89,7 +89,29 @@ function StatusDot({ status, isCurrent }: { status: string; isCurrent: boolean }
 function JobMessageList({ jobId, jobStatus }: { jobId: string; jobStatus: string }) {
   const [messages, setMessages] = useState<DeliveryMessage[]>([])
   const [loading, setLoading] = useState(true)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  async function handleRetry(messageId: string) {
+    setRetryingId(messageId)
+    try {
+      const res = await fetch(`/api/delivery/jobs/${jobId}/messages/${messageId}/retry`, { method: 'POST' })
+      const data = await res.json() as { success: boolean; sentAt?: string }
+      if (data.success) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, deliveryStatus: 'sent', sentAt: data.sentAt ?? new Date().toISOString() }
+              : m
+          )
+        )
+      }
+    } catch {
+      // silent — status unchanged, user can try again
+    } finally {
+      setRetryingId(null)
+    }
+  }
 
   async function fetchMessages() {
     try {
@@ -163,7 +185,18 @@ function JobMessageList({ jobId, jobStatus }: { jobId: string; jobStatus: string
                   <span className="text-[10px] font-medium text-blue-600">Sending…</span>
                 )}
                 {msg.deliveryStatus === 'failed' && (
-                  <span className="text-[10px] font-medium text-red-500">Failed</span>
+                  <>
+                    <span className="text-[10px] font-medium text-red-500">Failed</span>
+                    {jobStatus !== 'running' && (
+                      <button
+                        onClick={() => handleRetry(msg.id)}
+                        disabled={retryingId === msg.id}
+                        className="text-[10px] font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 transition-colors"
+                      >
+                        {retryingId === msg.id ? 'Retrying…' : 'Retry'}
+                      </button>
+                    )}
+                  </>
                 )}
                 {msg.deliveryStatus === 'sent' && msg.sentAt && (
                   <span className="text-[10px] text-gray-400">
