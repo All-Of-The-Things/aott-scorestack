@@ -364,6 +364,26 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - Single `upgradeRequiredPlan` state replaces ad-hoc duplicate modal logic
   - All props typed with Prisma-generated `Plan` type (no inline string union casts)
 
+- [x] **T-BF6** Orphaned runs invisible on Enrichments page — `app/runs/page.tsx` + `app/lib/auth.ts`
+  - `/runs` query widened to `OR: [{ orgId }, { userId }]` so runs created while authenticated but before org bootstrap propagated are visible immediately
+  - signIn callback now runs a second `updateMany({ where: { userId: user.id, orgId: null }, data: { orgId } })` to retroactively assign orgId on next login
+
+- [x] **T-BF7** ConnectSafely enrichment profile mapping — `app/lib/connectsafely.ts`
+  - Fixed `location`: was `p.location` (object) → `p.geoLocation?.fullLocation` (string)
+  - Fixed `experience` lookup: was `data.experience` (undefined) → `p.experience` (correct nesting under `data.profile`)
+  - Added retry logic to `fetchProfile` (same 2-retry / 3s-delay / retryable-error pattern already used by `sendMessage`)
+  - Unified constants: `MAX_RETRIES`, `isRetryableError` (previously duplicated per function)
+
+- [x] **T-BF8** Seniority derivation + company enrichment — `app/lib/connectsafely.ts` + `app/lib/linkedapi.ts`
+  - Added exported `deriveSeniority(title)` helper to `connectsafely.ts`; applied to both CS `fetchProfile` and LinkedAPI `fetchProfile`
+  - Fixed `CONNECT_SAFELY_ENRICHMENT_ENABLED` flag ordering: now checked before `LINKED_API_ENABLED` mock guard
+  - LinkedAPI: added best-effort `client.fetchCompany` (`st.openCompanyPage`) secondary call after `fetchPerson` to populate `industry` and `company_size`
+
+- [x] **T-BF9** Scoring criteria data validation — `app/run/[runId]/score/page.tsx` + `app/components/CriteriaBuilder.tsx`
+  - `deriveAvailableFields` now checks `value != null` (not just key presence) so `industry`/`company_size` never surface for CS-enriched runs
+  - `CriteriaBuilder`: "no data" amber badge on criterion field labels; disabled option in dropdown preserves correct field name display
+  - Pre-scoring modal lists unavailable fields; on "Score anyway", strips those criteria and proportionally renormalizes remaining weights before API submission
+
 ---
 
 ### Stage 9a — Delivery (ConnectSafely for message sending)
@@ -545,14 +565,18 @@ _Execute only after both flags are stable in production_
 | `app/run/[runId]/score/page.tsx` | 5, 9 (bug fix) | Polling fallback; run claiming on page load |
 | `app/run/[runId]/results/page.tsx` | 6, 7, 9 (bug fix) | Export button + Messages tab; run claiming on page load |
 | `app/lib/delivery.ts` | 9 | ConnectSafely delivery feature flag |
-| `app/lib/linkedapi.ts` | 9 | ConnectSafely enrichment feature flag guard |
+| `app/lib/linkedapi.ts` | 9 | Flag ordering fix; deriveSeniority; fetchCompany secondary call for industry + company_size |
 | `app/api/models/route.ts` | 10, 11 | orgId scope + limit check |
 | `app/api/score/route.ts` | 11 | orgId scope |
 | `app/api/suggest/route.ts` | 11 | orgId scope |
 | `app/components/SaveModelButton.tsx` | 9 (bug fix), 11 | Remove incorrect free-plan frontend gate; model limit gate |
-| `app/lib/auth.ts` | 9 (bug fix), 10 | Org bootstrap session fallback + run claiming; invite acceptance callback |
+| `app/lib/auth.ts` | 9 (bug fix), 10 | Org bootstrap session fallback + run claiming (email + userId); invite acceptance callback |
 | `app/components/MessagesTab.tsx` | 9 (bug fix) | Shared handleSend + upgradeRequiredPlan state + Plan typing |
 | `prisma/migrations/20260429170000_fix_schema_drift/migration.sql` | 9 (bug fix) | Schema drift — 5 missing columns + plan_limits seed |
+| `app/lib/connectsafely.ts` | 9 (bug fix) | Profile mapping fixes; retry logic for fetchProfile; deriveSeniority helper |
+| `app/runs/page.tsx` | 9 (bug fix) | Widen query to OR [orgId, userId] |
+| `app/run/[runId]/score/page.tsx` | 5, 9 (bug fix) | Polling fallback; run claiming; null-value check in deriveAvailableFields |
+| `app/components/CriteriaBuilder.tsx` | 9 (bug fix) | No-data modal, criteria stripping, weight normalization |
 
 ## New environment variables
 

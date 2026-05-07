@@ -121,7 +121,7 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 
 ### Org bootstrapping
 - On first sign-in a `User` row is created by NextAuth's Prisma adapter
-- **signIn callback** (best-effort): attempts to create the org and link the user immediately; also runs `prisma.run.updateMany` to claim any orphaned runs whose `notifyEmail` matches the user's email (`orgId: null → orgId`)
+- **signIn callback** (best-effort): attempts to create the org and link the user immediately; runs two `updateMany` claims — (a) runs whose `notifyEmail` matches the user's email, (b) runs whose `userId` matches but `orgId` is still null (covers authenticated enrichment before org bootstrap propagated to the session)
 - **Session callback fallback** (reliable): re-reads the user from DB on every session request; if `orgId` is still null (can happen when the signIn callback is skipped during NextAuth v5 email provider's verificationRequest phase), bootstraps the org and links the user there instead
 - Both paths are idempotent — whichever fires first wins; the other is a no-op
 - Subsequent invites link new users to an existing `orgId`
@@ -295,6 +295,27 @@ During the staged migration, both LinkedAPI and ConnectSafely can be active simu
 - `CONNECT_SAFELY_ENRICHMENT_ENABLED=true` → enrichment uses ConnectSafely; else LinkedAPI (legacy fallback)
 
 Once both flags are stable in production, LinkedAPI is removed entirely (Stage 9c).
+
+### ConnectSafely enrichment field coverage
+
+ConnectSafely profile responses expose a subset of `LinkedInProfile` fields. Seniority is derived from the job title via `deriveSeniority()` in `app/lib/connectsafely.ts` for both providers.
+
+| Field | ConnectSafely | LinkedAPI |
+|-------|--------------|-----------|
+| `first_name` / `last_name` / `full_name` | ✓ | ✓ |
+| `headline` | ✓ | ✓ |
+| `current_title` | ✓ (`experience[0].title`) | ✓ (`person.position`) |
+| `company_name` | ✓ (`experience[0].companyName`) | ✓ |
+| `location` | ✓ (`geoLocation.fullLocation`) | ✓ |
+| `seniority` | ✓ (derived from title) | ✓ (derived from title) |
+| `industry` | ✗ (no endpoint) | ✓ (`fetchCompany` secondary call) |
+| `company_size` | ✗ (no endpoint) | ✓ (`fetchCompany` secondary call) |
+
+`deriveAvailableFields` on the score page filters out null-valued fields, so `industry` and `company_size` never appear as scoring options for ConnectSafely-enriched runs. If a saved model references unavailable fields, `CriteriaBuilder` warns the user via a modal and strips those criteria before submission, renormalizing remaining weights to sum to 100.
+
+LinkedAPI enrichment uses two sequential SDK calls per contact:
+1. `client.fetchPerson.execute / result` — core profile data
+2. `client.fetchCompany.execute / result` (`st.openCompanyPage`) — best-effort; populates `industry` + `company_size`; non-fatal on failure
 
 ### Test mode
 
