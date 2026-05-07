@@ -21,8 +21,8 @@ function deriveAvailableFields(enrichedRows: { enrichedData: unknown }[]): strin
   const found = new Set<string>()
   for (const row of enrichedRows) {
     if (row.enrichedData && typeof row.enrichedData === 'object') {
-      for (const key of Object.keys(row.enrichedData as object)) {
-        if (key in SCOREABLE_FIELDS) found.add(key)
+      for (const [key, value] of Object.entries(row.enrichedData as object)) {
+        if (key in SCOREABLE_FIELDS && value != null) found.add(key)
       }
     }
   }

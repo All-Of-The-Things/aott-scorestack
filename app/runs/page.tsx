@@ -20,25 +20,30 @@ export default async function RunsPage() {
   const session = await auth()
   if (!session) redirect('/auth/signin?callbackUrl=/runs')
 
-  const orgId = session.user?.orgId
-  const runs = orgId
-    ? await prisma.run.findMany({
-        where: { orgId },
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          originalFilename: true,
-          status: true,
-          totalContacts: true,
-          enrichedCount: true,
-          failedCount: true,
-          createdAt: true,
-          completedAt: true,
-          model: { select: { name: true } },
-        },
-      })
-    : []
+  const userId = session.user.id
+  const orgId  = session.user?.orgId
+
+  const runs = await prisma.run.findMany({
+    where: {
+      OR: [
+        ...(orgId ? [{ orgId }] : []),
+        { userId },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      name: true,
+      originalFilename: true,
+      status: true,
+      totalContacts: true,
+      enrichedCount: true,
+      failedCount: true,
+      createdAt: true,
+      completedAt: true,
+      model: { select: { name: true } },
+    },
+  })
 
   return (
     <>
