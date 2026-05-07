@@ -114,6 +114,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             data: { orgId, userId: user.id },
           });
         }
+
+        // Claim runs created while authenticated but before org bootstrap propagated
+        // to the session (userId set, orgId null).
+        if (orgId && user.id) {
+          await prisma.run.updateMany({
+            where: { userId: user.id, orgId: null },
+            data: { orgId },
+          });
+        }
       } catch (err) {
         console.error("[auth] org bootstrap failed (non-fatal):", err);
       }
