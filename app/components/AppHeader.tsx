@@ -167,6 +167,20 @@ export default function AppHeader({ userEmail, breadcrumb, modelName, plan }: Ap
                     Plan settings
                   </Link>
 
+                  {/* Integrations */}
+                  {(plan === 'pro' || plan === 'enterprise') && (
+                    <Link
+                      href="/settings/integrations"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                      </svg>
+                      Integrations
+                    </Link>
+                  )}
+
                   {/* Sign out */}
                   <div className="border-t border-gray-100">
                     <button

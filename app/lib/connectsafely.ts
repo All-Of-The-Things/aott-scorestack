@@ -14,7 +14,11 @@ function isRetryableError(status: number, message: string): boolean {
   return false
 }
 
-function getApiKey(): string {
+export type SendResult =
+  | { success: true }
+  | { success: false; errorCode: 'auth_failed' | 'account_disconnected' | 'rate_limited' | 'send_failed'; error: string }
+
+function getPlatformApiKey(): string {
   const key = process.env.CONNECT_SAFELY_API_KEY
   if (!key) throw new Error('CONNECT_SAFELY_API_KEY environment variable must be set')
   return key
@@ -28,17 +32,18 @@ function extractProfileId(linkedinUrl: string): string {
 
 export async function sendMessage(
   personUrl: string,
-  text: string
-): Promise<{ success: boolean; error?: string }> {
-  const apiKey = getApiKey()
+  text: string,
+  apiKey?: string
+): Promise<SendResult> {
+  const key = apiKey ?? getPlatformApiKey()
   let profileId: string
   try {
     profileId = extractProfileId(personUrl)
   } catch {
-    return { success: false, error: `Cannot extract profile ID from URL: ${personUrl}` }
+    return { success: false, errorCode: 'send_failed', error: `Cannot extract profile ID from URL: ${personUrl}` }
   }
 
-  let lastError: string | undefined
+  let lastError = 'Unknown error'
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAY_MS)
@@ -47,19 +52,23 @@ export async function sendMessage(
       const res = await fetch(`${CS_BASE_URL}/linkedin/messaging/send`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ recipientProfileId: profileId, message: text }),
       })
 
       const data = await res.json().catch(() => ({}))
+      const msg: string = data.message ?? data.errorDetails?.message ?? data.error ?? res.statusText
+
+      if (res.status === 401) return { success: false, errorCode: 'auth_failed', error: `ConnectSafely 401: ${msg}` }
+      if (res.status === 403) return { success: false, errorCode: 'account_disconnected', error: `ConnectSafely 403: ${msg}` }
+      if (res.status === 429) return { success: false, errorCode: 'rate_limited', error: `ConnectSafely 429: ${msg}` }
 
       if (!res.ok || data.success === false) {
-        const msg = data.message ?? data.errorDetails?.message ?? data.error ?? res.statusText
         lastError = `ConnectSafely ${res.status}: ${msg}`
         if (attempt < MAX_RETRIES && isRetryableError(res.status, msg)) continue
-        return { success: false, error: lastError }
+        return { success: false, errorCode: 'send_failed', error: lastError }
       }
 
       return { success: true }
@@ -69,7 +78,7 @@ export async function sendMessage(
     }
   }
 
-  return { success: false, error: lastError }
+  return { success: false, errorCode: 'send_failed', error: lastError }
 }
 
 export function deriveSeniority(title: string | null): string | null {
@@ -97,7 +106,7 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
     return { status: 'skipped', profile: null, error: 'Cannot extract profile ID from LinkedIn URL' }
   }
 
-  const apiKey = getApiKey()
+  const apiKey = getPlatformApiKey()
   let lastError: string | undefined
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

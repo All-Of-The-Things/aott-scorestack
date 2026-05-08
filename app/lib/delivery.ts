@@ -1,7 +1,8 @@
 import { getClient } from './linkedapi'
 import { sendMessage as csSendMessage } from './connectsafely'
+import { getOrgConnectSafelyKey } from './credentials'
 import prisma from './prisma'
-import { sendDeliveryComplete } from './notify'
+import { sendDeliveryComplete, sendByokCredentialError } from './notify'
 
 function resolveDelay(useConnectSafely: boolean): number {
   const fallback = process.env.DELIVERY_DELAY_MS
@@ -27,12 +28,17 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
     },
   })
 
+  const useConnectSafely = process.env.CONNECT_SAFELY_DELIVERY_ENABLED === 'true'
+
+  // Resolve delivery identity: BYOK key takes precedence over platform credential
+  const orgKey = useConnectSafely ? await getOrgConnectSafelyKey(job.orgId) : null
+  const deliveryIdentity = orgKey ? 'byok' : 'platform_agent'
+
   await prisma.deliveryJob.update({
     where: { id: jobId },
-    data: { status: 'running', startedAt: new Date() },
+    data: { status: 'running', startedAt: new Date(), deliveryIdentity },
   })
 
-  const useConnectSafely = process.env.CONNECT_SAFELY_DELIVERY_ENABLED === 'true'
   const client = useConnectSafely ? null : getClient()
   const deliveryDelayMs = resolveDelay(useConnectSafely)
   let sentCount = 0
@@ -69,9 +75,37 @@ export async function processDeliveryJob(jobId: string, notifyEmail: string): Pr
         let errorMsg: string | undefined
 
         if (useConnectSafely) {
-          const result = await csSendMessage(personUrl, text)
+          const result = await csSendMessage(personUrl, text, orgKey ?? undefined)
+
+          if (!result.success && (result.errorCode === 'auth_failed' || result.errorCode === 'account_disconnected')) {
+            // Credential error is non-retryable and affects the whole account — abort job immediately
+            const now = new Date()
+            await prisma.$transaction([
+              prisma.deliveryJob.update({
+                where: { id: jobId },
+                data: { status: 'failed', failureCode: result.errorCode, completedAt: now },
+              }),
+              prisma.generatedMessage.updateMany({
+                where: { deliveryJobId: jobId, deliveryStatus: 'pending' },
+                data: { deliveryStatus: 'failed' },
+              }),
+              ...(deliveryIdentity === 'byok'
+                ? [prisma.orgIntegration.update({
+                    where: { orgId: job.orgId },
+                    data: { connectSafelyLastError: result.error },
+                  })]
+                : []),
+            ])
+            try {
+              await sendByokCredentialError(notifyEmail, jobId, result.errorCode)
+            } catch {
+              // non-fatal
+            }
+            return
+          }
+
           success = result.success
-          errorMsg = result.error
+          errorMsg = result.success ? undefined : result.error
         } else {
           const workflowId = await client!.sendMessage.execute({ personUrl, text })
           const res = await client!.sendMessage.result(workflowId)
