@@ -9,7 +9,8 @@
 | Database | PostgreSQL via Prisma ORM |
 | File storage | Vercel Blob |
 | AI / LLM | Anthropic SDK (Claude) |
-| LinkedIn enrichment + delivery | ConnectSafely REST API (platform API key from env var; BYOK for delivery) |
+| LinkedIn enrichment | LinkedAPI SDK (platform credentials from env var; switchable via `LINKED_API_ENRICHMENT_ENABLED`) |
+| LinkedIn delivery | ConnectSafely REST API (platform credentials from env var; switchable via `CONNECT_SAFELY_DELIVERY_ENABLED`) |
 | Email | Resend (magic-link auth + enrichment notifications only) |
 | Payments | Lemon Squeezy (subscriptions + one-time credit packs; MoR, Uruguay-safe) |
 | Deployment | Vercel |
@@ -287,14 +288,14 @@ processDeliveryJob(jobId, notifyEmail):
   └── sendDeliveryComplete(notifyEmail, jobId, sentCount, failedCount) — non-fatal
 ```
 
-### Migration co-existence (Phase 9 transition)
+### Dual-provider architecture (permanent)
 
-During the staged migration, both LinkedAPI and ConnectSafely can be active simultaneously via feature flags:
+Both LinkedAPI and ConnectSafely operate simultaneously, each with a distinct and non-overlapping role, controlled via env vars:
 
-- `CONNECT_SAFELY_DELIVERY_ENABLED=true` → delivery uses ConnectSafely; else LinkedAPI (legacy fallback)
-- `CONNECT_SAFELY_ENRICHMENT_ENABLED=true` → enrichment uses ConnectSafely; else LinkedAPI (legacy fallback)
+- **ConnectSafely** (`CONNECT_SAFELY_DELIVERY_ENABLED`) — message delivery only. Defaults to `true`. Falling back to LinkedAPI delivery is possible but not the intended path.
+- **LinkedAPI** (`LINKED_API_ENRICHMENT_ENABLED`) — data enrichment only. Defaults to `true`. ConnectSafely enrichment remains available as an alternative via `CONNECT_SAFELY_ENRICHMENT_ENABLED`.
 
-Once both flags are stable in production, LinkedAPI is removed entirely (Stage 9c).
+This is a **permanent dual-provider design**, not a migration. LinkedAPI is not being removed.
 
 ### ConnectSafely enrichment field coverage
 
@@ -335,10 +336,62 @@ Job-level counts (`sentCount`, `failedCount`, status) are polled every **10 seco
 Only "Send now" is implemented. `scheduledAt` is never written. A "Schedule for later" UI teaser exists in `DeliverySchedulerModal` (coming-soon, non-interactive).
 
 **Notes:**
-- `CONNECT_SAFELY_API_KEY` is the single credential for both enrichment and delivery (platform-managed)
+- `CONNECT_SAFELY_API_KEY` is the platform credential for delivery (managed)
+- `LINKED_API_TOKEN` / `LINKED_API_ID_TOKEN` are the platform credentials for enrichment (managed)
 - Delivery is serialised (one message at a time) to respect LinkedIn rate limits
 - `DeliveryJob.channel` field is retained in the schema for future email channel addition; only `linkedin` is implemented in v1
-- `OrgIntegration` model exists in schema for future BYOK credential support; unused in v1
+- `OrgIntegration` model exists in schema for Phase 10 BYOK credential support; unused until then
+
+---
+
+## BYOK Architecture (Phases 10a + 10b)
+
+Delivery has two identity modes:
+
+| Mode | Gate | Description |
+|------|------|-------------|
+| **Platform Generic Agent** | Pro | Messages sent from ScoreStack's own LinkedIn account. Default — zero setup. |
+| **BYOK** | Pro | Org connects their own ConnectSafely API key. Messages sent from their own LinkedIn account. |
+
+### Phase 10a — Platform Generic Agent
+- No credential setup. The platform's `CONNECT_SAFELY_API_KEY` is the delivery identity.
+- `DeliveryJob.deliveryIdentity` (new field) records `'platform_agent'` — used for reporting and as the Phase 10b branch point.
+- `DeliverySchedulerModal` shows: "Messages will be sent from the ScoreStack outreach agent."
+
+### Phase 10b — BYOK credential flow
+
+**Storage:** `OrgIntegration` extended with:
+- `connectSafelyApiKey` — AES-256-GCM encrypted, key from `ENCRYPTION_KEY` env var
+- `connectSafelyVerifiedAt` — set on successful validation; indicates a trusted key
+- `connectSafelyLastError` — set when a delivery job aborts due to credential failure; cleared on reconnect
+
+**Validation on connect:** `POST /api/org/integrations` makes a test call to ConnectSafely before saving. Invalid keys return `400` — nothing is persisted.
+
+**Runtime resolution in `processDeliveryJob`:**
+1. `getOrgConnectSafelyKey(orgId)` → decrypt org's key if set
+2. If present → BYOK path; else → platform agent path
+3. `DeliveryJob.deliveryIdentity` is written as `'byok'` or `'platform_agent'`
+
+**Failure handling — auth errors are job-aborting:**
+
+| Error | HTTP Status | Action |
+|-------|-------------|--------|
+| `auth_failed` | 401 | Abort job; mark remaining messages `failed`; set `connectSafelyLastError`; email user |
+| `account_disconnected` | 403 / CS body | Same abort path; distinct email copy |
+| `rate_limited` | 429 | Retry (existing logic); if exhausted, mark message `failed`, continue batch |
+| `send_failed` | Other | Mark individual message `failed`, continue batch |
+
+`DeliveryJob.failureCode` records `'auth_failed'` or `'account_disconnected'` when a job aborts.
+
+**Settings UI (`app/settings/integrations/page.tsx`):**
+- Admin-only; non-admins see read-only state
+- ConnectSafely card has three states: Not connected / Connected + healthy / Connected + error (amber banner surfacing `lastError`)
+- `DeliverySchedulerModal` fetches integration status on open; blocks Send if `lastError` is set
+
+### Environment variables
+```
+ENCRYPTION_KEY=   # 32-byte hex string — AES-256-GCM key for BYOK credential storage
+```
 
 ---
 
@@ -422,8 +475,10 @@ LEMONSQUEEZY_STORE_ID=
 LEMONSQUEEZY_STARTER_VARIANT_ID=
 LEMONSQUEEZY_PRO_VARIANT_ID=
 
-CONNECT_SAFELY_API_KEY=             # ConnectSafely REST API key (enrichment + messaging)
-# Migration flags (Phase 9 transition — remove once both are stable in production)
-CONNECT_SAFELY_DELIVERY_ENABLED=    # true = use ConnectSafely for delivery (false = LinkedAPI fallback)
-CONNECT_SAFELY_ENRICHMENT_ENABLED=  # true = use ConnectSafely for enrichment (false = LinkedAPI fallback)
+CONNECT_SAFELY_API_KEY=             # ConnectSafely REST API key — delivery
+CONNECT_SAFELY_DELIVERY_ENABLED=    # true = route delivery through ConnectSafely (permanent control)
+CONNECT_SAFELY_ENRICHMENT_ENABLED=  # true = route enrichment through ConnectSafely (alternative path)
+LINKED_API_ENRICHMENT_ENABLED=      # true = route enrichment through LinkedAPI (primary path; default)
+
+ENCRYPTION_KEY=                     # 32-byte hex string — AES-256-GCM for BYOK credential storage (Phase 10)
 ```
