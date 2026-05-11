@@ -142,15 +142,29 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
   const isFree      = planLimits.isFree
   const defaultPageSize = Math.max(1, parseInt(process.env.RESULTS_PAGE_SIZE ?? '25', 10))
 
-  const serialized: SerializedResult[] = runResults.map((r, i) => ({
-    id: r.id,
-    rank: i + 1,
-    linkedinUrl: r.linkedinUrl,
-    enrichmentStatus: r.enrichmentStatus as SerializedResult['enrichmentStatus'],
-    totalScore: Number(r.totalScore ?? 0),
-    criterionScores: isFree ? [] : (r.criterionScores as unknown as CriterionScore[]) ?? [],
-    enrichedData: isFree ? null : (r.enrichedData as Record<string, unknown>) ?? null,
-  }))
+  const serialized: SerializedResult[] = runResults.map((r, i) => {
+    const enrichedData = r.enrichedData as Record<string, unknown> | null
+    const fullName = enrichedData?.full_name as string | null | undefined
+    const firstName = enrichedData?.first_name as string | null | undefined
+    const lastName = enrichedData?.last_name as string | null | undefined
+    const contactName =
+      fullName ??
+      (firstName ? `${firstName} ${lastName ?? ''}`.trim() : null) ??
+      null
+    const contactHeadline = (enrichedData?.headline as string | null | undefined) ?? null
+
+    return {
+      id: r.id,
+      rank: i + 1,
+      linkedinUrl: r.linkedinUrl,
+      contactName,
+      contactHeadline,
+      enrichmentStatus: r.enrichmentStatus as SerializedResult['enrichmentStatus'],
+      totalScore: Number(r.totalScore ?? 0),
+      criterionScores: isFree ? [] : (r.criterionScores as unknown as CriterionScore[]) ?? [],
+      enrichedData: isFree ? null : enrichedData ?? null,
+    }
+  })
 
   const enrichRate =
     run.totalContacts > 0

@@ -12,6 +12,8 @@ export interface SerializedResult {
   id: string
   rank: number
   linkedinUrl: string
+  contactName: string | null
+  contactHeadline: string | null
   enrichmentStatus: 'success' | 'failed' | 'skipped'
   totalScore: number           // Decimal already converted to number by server page
   criterionScores: CriterionScore[]
@@ -357,7 +359,7 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100 text-left text-gray-400 font-medium">
               <th className="pl-6 pr-3 py-3 w-10">#</th>
-              <th className="px-3 py-3">LinkedIn</th>
+              <th className="px-3 py-3">Contact</th>
               <th className="px-3 py-3 w-24">Status</th>
               <th className="px-3 py-3 w-36">Score</th>
               <th className="pl-3 pr-6 py-3 w-8" />
@@ -382,8 +384,12 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
                       onClick={(e) => e.stopPropagation()}
                       className="text-blue-600 hover:underline truncate block"
                     >
-                      {result.linkedinUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, '')}
+                      {result.contactName ??
+                        result.linkedinUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, '')}
                     </a>
+                    {result.contactHeadline && (
+                      <span className="text-xs text-gray-400 truncate block">{result.contactHeadline}</span>
+                    )}
                   </td>
                   <td className="px-3 py-3">
                     <StatusBadge status={result.enrichmentStatus} />
