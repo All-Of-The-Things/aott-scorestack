@@ -174,8 +174,24 @@ model Organization {
   usageLogs        UsageLog[]
   creditPurchases  CreditPurchase[]
   pendingCheckouts PendingCheckout[]
+  invites          OrgInvite[]
 
   @@map("organizations")
+}
+
+model OrgInvite {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  email     String
+  role      UserRole @default(member)
+  token     String   @unique @default(cuid())
+  expires   DateTime
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@map("org_invites")
 }
 
 model PendingCheckout {
