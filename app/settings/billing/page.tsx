@@ -98,11 +98,10 @@ export default async function BillingPage() {
       <AppHeader
         userEmail={session.user.email}
         plan={plan}
-        breadcrumb={[{ label: 'Settings' }, { label: 'Billing' }]}
       />
 
       <main className="max-w-2xl mx-auto px-4 py-10">
-        <SettingsNav />
+        <SettingsNav showTeam={process.env.TEAMS_ENABLED === 'true'} />
 
         <div className="space-y-6">
 

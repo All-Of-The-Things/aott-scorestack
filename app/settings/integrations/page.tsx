@@ -29,11 +29,10 @@ export default async function IntegrationsPage() {
       <AppHeader
         userEmail={email}
         plan={plan}
-        breadcrumb={[{ label: 'Settings' }, { label: 'Integrations' }]}
       />
 
       <main className="max-w-2xl mx-auto px-4 py-10">
-        <SettingsNav />
+        <SettingsNav showTeam={process.env.TEAMS_ENABLED === 'true'} />
 
         <div className="space-y-6">
           <div>

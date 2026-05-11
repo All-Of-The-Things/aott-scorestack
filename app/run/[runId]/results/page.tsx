@@ -7,6 +7,7 @@ import type { CriterionScore, Criterion } from '@/app/lib/scoring'
 import SaveModelButton from '@/app/components/SaveModelButton'
 import ExportButton from '@/app/components/ExportButton'
 import AppHeader from '@/app/components/AppHeader'
+import Breadcrumb from '@/app/components/Breadcrumb'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
 import ResultsTabBar from '@/app/components/ResultsTabBar'
 import MessagesTab from '@/app/components/MessagesTab'
@@ -169,17 +170,14 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
       <AppHeader
         userEmail={session.user.email}
         plan={session.user.plan}
-        breadcrumb={[
-          { label: run.name ?? run.originalFilename, href: `/run/${runId}/score` },
-          { label: 'Results' },
-        ]}
         modelName={run.model?.name ?? null}
       />
 
       <main className="bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
 
-<WorkflowStepper currentStep={3} runId={runId} />
+          <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: `/run/${runId}/score` }, { label: 'Results' }]} />
+          <WorkflowStepper currentStep={3} runId={runId} />
 
           <div className="mb-4">
             <h1 className="text-xl font-semibold text-gray-900">{run.name ?? run.originalFilename}</h1>

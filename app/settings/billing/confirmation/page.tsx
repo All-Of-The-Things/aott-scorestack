@@ -42,7 +42,6 @@ export default async function BillingConfirmationPage() {
       <AppHeader
         userEmail={session.user.email}
         plan={(pending.plan ?? session.user.plan) as string}
-        breadcrumb={[{ label: 'Settings' }, { label: 'Billing' }, { label: 'Confirmation' }]}
       />
 
       <main className="max-w-lg mx-auto px-4 py-16 flex flex-col items-center text-center space-y-8">

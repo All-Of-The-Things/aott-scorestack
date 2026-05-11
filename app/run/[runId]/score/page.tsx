@@ -6,6 +6,7 @@ import CriteriaBuilder from '@/app/components/CriteriaBuilder'
 import AppHeader from '@/app/components/AppHeader'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
 import EnrichingWait from '@/app/components/EnrichingWait'
+import Breadcrumb from '@/app/components/Breadcrumb'
 import type { Criterion } from '@/app/lib/scoring'
 
 const SCOREABLE_FIELDS: Record<string, string> = {
@@ -62,10 +63,10 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
-          breadcrumb={[{ label: run.name ?? run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
+            <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: '/runs' }, { label: 'Define criteria' }]} />
             <WorkflowStepper currentStep={2} runId={runId} />
             <EnrichingWait runId={runId} />
           </div>
@@ -80,10 +81,10 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
-          breadcrumb={[{ label: run.name ?? run.originalFilename, href: '/enrich' }, { label: 'Define criteria' }]}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
+            <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: '/runs' }, { label: 'Define criteria' }]} />
             <WorkflowStepper currentStep={2} runId={runId} />
             <div className="min-h-[60vh] flex items-center justify-center">
               <div className="bg-white rounded-2xl shadow-sm border border-red-200 p-10 max-w-sm w-full text-center">
@@ -128,15 +129,12 @@ export default async function ScorePage({ params }: ScorePageProps) {
       <AppHeader
         userEmail={session.user.email}
         plan={session.user.plan}
-        breadcrumb={[
-          { label: run.name ?? run.originalFilename, href: '/enrich' },
-          { label: 'Define criteria' },
-        ]}
       />
 
       <main className="bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
 
+          <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: '/runs' }, { label: 'Define criteria' }]} />
           <WorkflowStepper currentStep={2} runId={runId} />
 
           <div className="mb-6">
