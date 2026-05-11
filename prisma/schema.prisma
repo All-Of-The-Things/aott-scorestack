@@ -174,8 +174,24 @@ model Organization {
   usageLogs        UsageLog[]
   creditPurchases  CreditPurchase[]
   pendingCheckouts PendingCheckout[]
+  invites          OrgInvite[]
 
   @@map("organizations")
+}
+
+model OrgInvite {
+  id        String   @id @default(cuid())
+  orgId     String   @map("org_id")
+  email     String
+  role      UserRole @default(member)
+  token     String   @unique @default(cuid())
+  expires   DateTime
+  createdAt DateTime @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@map("org_invites")
 }
 
 model PendingCheckout {
@@ -214,13 +230,16 @@ model Subscription {
 }
 
 model OrgIntegration {
-  id               String    @id @default(cuid())
-  orgId            String    @unique @map("org_id")
-  linkedApiToken   String    @map("linked_api_token")
-  linkedApiIdToken String    @map("linked_api_id_token")
-  verifiedAt       DateTime? @map("verified_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                      String    @id @default(cuid())
+  orgId                   String    @unique @map("org_id")
+  linkedApiToken          String    @map("linked_api_token")
+  linkedApiIdToken        String    @map("linked_api_id_token")
+  verifiedAt              DateTime? @map("verified_at")
+  connectSafelyApiKey     String?   @map("connect_safely_api_key")
+  connectSafelyVerifiedAt DateTime? @map("connect_safely_verified_at")
+  connectSafelyLastError  String?   @map("connect_safely_last_error")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -317,17 +336,19 @@ model GeneratedMessage {
 }
 
 model DeliveryJob {
-  id          String          @id @default(cuid())
-  orgId       String          @map("org_id")
-  runId       String          @map("run_id")
-  channel     DeliveryChannel @default(linkedin)
-  status      JobStatus       @default(scheduled)
-  scheduledAt DateTime?       @map("scheduled_at")
-  startedAt   DateTime?       @map("started_at")
-  completedAt DateTime?       @map("completed_at")
-  sentCount   Int             @default(0) @map("sent_count")
-  failedCount Int             @default(0) @map("failed_count")
-  createdAt   DateTime        @default(now()) @map("created_at")
+  id               String          @id @default(cuid())
+  orgId            String          @map("org_id")
+  runId            String          @map("run_id")
+  channel          DeliveryChannel @default(linkedin)
+  status           JobStatus       @default(scheduled)
+  deliveryIdentity String          @default("platform_agent") @map("delivery_identity")
+  failureCode      String?         @map("failure_code")
+  scheduledAt      DateTime?       @map("scheduled_at")
+  startedAt        DateTime?       @map("started_at")
+  completedAt      DateTime?       @map("completed_at")
+  sentCount        Int             @default(0) @map("sent_count")
+  failedCount      Int             @default(0) @map("failed_count")
+  createdAt        DateTime        @default(now()) @map("created_at")
 
   org      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   run      Run                @relation(fields: [runId], references: [id])

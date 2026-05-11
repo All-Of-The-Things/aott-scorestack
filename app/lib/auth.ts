@@ -81,9 +81,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       };
     },
 
-    // Best-effort org bootstrap for new users. Non-blocking — sign-in succeeds
-    // even if this fails. Models are now scoped to userId, so org is not
-    // required for core functionality (it will be used for billing/team later).
+    // Best-effort org bootstrap + invite acceptance for new/returning users.
+    // Non-blocking — sign-in succeeds even if this fails.
     async signIn({ user }) {
       if (!user.id) return true;
 
@@ -95,6 +94,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         let orgId: string | null = dbUser?.orgId ?? null;
 
+        // Step 1: Accept a pending org invite (checked before bootstrap so invited
+        // users join the inviting org rather than getting a new empty org).
+        if (user.email) {
+          const invite = await prisma.orgInvite.findFirst({
+            where: { email: user.email.toLowerCase(), expires: { gte: new Date() } },
+          });
+          if (invite) {
+            if (!orgId) {
+              await prisma.user.update({
+                where: { id: user.id },
+                data: { orgId: invite.orgId, role: invite.role },
+              });
+              orgId = invite.orgId;
+            }
+            // Delete invite regardless — if user already had an org, existing org wins.
+            await prisma.orgInvite.delete({ where: { id: invite.id } });
+          }
+        }
+
+        // Step 2: Normal org bootstrap (only if still no orgId after invite check).
         if (dbUser && !orgId) {
           const org = await prisma.organization.create({
             data: { name: "My Workspace", plan: "free" as Plan },
@@ -106,8 +125,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           orgId = org.id;
         }
 
-        // Claim runs created during unauthenticated enrichment — they were stored
-        // with notifyEmail but no orgId/userId; link them now so they appear in the list.
+        // Step 3: Claim runs (unchanged).
         if (orgId && user.email) {
           await prisma.run.updateMany({
             where: { notifyEmail: user.email, orgId: null },
@@ -115,8 +133,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           });
         }
 
-        // Claim runs created while authenticated but before org bootstrap propagated
-        // to the session (userId set, orgId null).
         if (orgId && user.id) {
           await prisma.run.updateMany({
             where: { userId: user.id, orgId: null },

@@ -61,5 +61,50 @@
     "rationale": "No org management UI exists at this stage. Scoping to orgId would mean models are inaccessible until org bootstrap is confirmed working. userId scoping works immediately on sign-in.",
     "outcome": "Migration 20260416175155_scoring_model_user_ownership adds user_id to scoring_models. POST /api/models and GET /api/models queries use userId.",
     "files": ["prisma/migrations/20260416175155_scoring_model_user_ownership/migration.sql", "app/api/models/route.ts"]
+  },
+  {
+    "id": "D-008",
+    "date": "2026-05-07",
+    "title": "Dual-provider LinkedIn architecture is permanent",
+    "decision": "LinkedAPI (enrichment) and ConnectSafely (delivery) coexist permanently, each controlled by env var. Stage 9c (LinkedAPI removal) dropped.",
+    "rationale": "LinkedAPI delivers richer enrichment data (industry, company_size). ConnectSafely handles delivery at lower cost via plain REST. Separating roles lets each provider do what it does best. No migration cost — both are already running.",
+    "outcome": "CONNECT_SAFELY_DELIVERY_ENABLED and LINKED_API_ENRICHMENT_ENABLED are permanent runtime flags. connectsafely.ts and linkedapi.ts each own their respective domain exclusively.",
+    "files": ["app/lib/connectsafely.ts", "app/lib/linkedapi.ts", "app/lib/delivery.ts"]
+  },
+  {
+    "id": "D-009",
+    "date": "2026-05-08",
+    "title": "Delivery identity model: platform_agent vs byok",
+    "decision": "Two delivery identities only: platform_agent (ScoreStack's CS key, default, zero setup) and byok (org connects their own CS key). Both are Pro-only. No third mode.",
+    "rationale": "Simplifies delivery routing to a single boolean decision. Platform agent works for most Pro users without any setup. BYOK gives orgs control over their own LinkedIn account for brand consistency.",
+    "outcome": "DeliveryJob.deliveryIdentity set to 'byok' or 'platform_agent' at job start. OrgIntegration extended with CS credential fields. /settings/integrations page added for BYOK setup.",
+    "files": ["app/lib/delivery.ts", "app/lib/credentials.ts", "app/api/org/integrations/route.ts", "app/settings/integrations/page.tsx"]
+  },
+  {
+    "id": "D-010",
+    "date": "2026-05-08",
+    "title": "BYOK auth errors abort entire delivery job",
+    "decision": "401/403 errors from ConnectSafely during BYOK delivery abort the entire job atomically (all remaining messages marked failed, job status set to failed). Rate-limit and transient errors are per-message and don't abort the batch.",
+    "rationale": "Auth errors indicate the account/key is invalid for ALL messages — retrying individual messages or continuing the batch would guarantee failure for every remaining contact and waste API quota. Non-auth errors may be transient and worth retrying per-message.",
+    "outcome": "prisma.$transaction used for atomic abort. connectSafelyLastError written to OrgIntegration on abort. sendByokCredentialError notifies the user. auth errors classified as non-retryable in connectsafely.ts.",
+    "files": ["app/lib/delivery.ts", "app/lib/connectsafely.ts", "app/lib/notify.ts"]
+  },
+  {
+    "id": "D-011",
+    "date": "2026-05-11",
+    "title": "Header nav always visible; breadcrumb in page content",
+    "decision": "AppHeader nav links (Enrichments, Delivery) always visible when logged in. Breadcrumbs rendered in page content above the page title, not in the header. Settings location communicated by SettingsNav active tab.",
+    "rationale": "Original implementation hid nav when breadcrumb was present, making it impossible to navigate to Enrichments/Delivery from settings or run pages. Separation into header (global nav) + page content (contextual breadcrumb) is a standard pattern.",
+    "outcome": "Breadcrumb.tsx created. breadcrumb prop removed from AppHeader. Run pages render <Breadcrumb> above <WorkflowStepper>. Settings pages rely on SettingsNav (no breadcrumb needed).",
+    "files": ["app/components/AppHeader.tsx", "app/components/Breadcrumb.tsx", "app/run/[runId]/score/page.tsx", "app/run/[runId]/results/page.tsx"]
+  },
+  {
+    "id": "D-012",
+    "date": "2026-05-11",
+    "title": "Org invite uses dedicated OrgInvite model, not VerificationToken",
+    "decision": "Org invitations use a dedicated OrgInvite model with explicit orgId, email, role, token, expires fields. Invite acceptance happens in the signIn callback by email match. If the invited user already has an orgId, the existing org wins — invite is deleted silently.",
+    "rationale": "VerificationToken has no role field and is shared with NextAuth's magic-link flow. Encoding role in the identifier would require fragile prefix queries. A dedicated model is explicit, extensible, and separates concerns cleanly.",
+    "outcome": "prisma/migrations/20260511000000_org_invite adds org_invites table. auth.ts signIn callback checks OrgInvite before org bootstrap. /api/org/invite creates invites and sends email. /settings/team page manages members and pending invites.",
+    "files": ["prisma/schema.prisma", "app/lib/auth.ts", "app/api/org/invite/route.ts", "app/settings/team/page.tsx"]
   }
 ]

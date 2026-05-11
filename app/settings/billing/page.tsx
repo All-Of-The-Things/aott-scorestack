@@ -4,6 +4,7 @@ import prisma from '@/app/lib/prisma'
 import { fetchPlanVariants, fetchCreditPacks } from '@/app/lib/billing'
 import type { PlanVariant } from '@/app/lib/billing'
 import AppHeader from '@/app/components/AppHeader'
+import SettingsNav from '@/app/components/SettingsNav'
 import BillingCTAs from './BillingCTAs'
 import { getPlanLimitsFor } from '@/app/lib/quota'
 
@@ -97,10 +98,12 @@ export default async function BillingPage() {
       <AppHeader
         userEmail={session.user.email}
         plan={plan}
-        breadcrumb={[{ label: 'Settings' }, { label: 'Billing' }]}
       />
 
-      <main className="max-w-2xl mx-auto px-4 py-10 space-y-6">
+      <main className="max-w-2xl mx-auto px-4 py-10">
+        <SettingsNav showTeam={process.env.TEAMS_ENABLED === 'true'} />
+
+        <div className="space-y-6">
 
         {/* ── Plan card ──────────────────────────────────────────────────── */}
         <section className="bg-white border border-gray-200 rounded-2xl p-6 space-y-5">
@@ -157,6 +160,7 @@ export default async function BillingPage() {
           />
         </section>
 
+        </div>
       </main>
     </div>
   )

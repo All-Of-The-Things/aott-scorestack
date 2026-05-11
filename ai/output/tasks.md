@@ -3,8 +3,9 @@
 **Phase:** EXECUTION  
 **Command:** BUILD::IMPLEMENT  
 **Source specs:** `/ai/output/specs/`
-**Last replanned:** PLAN::ARCHITECTURE Phase 09 — ConnectSafely migration inserted as new Phase 9 (Teams → Phase 10, Gates → Phase 11); T-44b seat limits remain in Phase 10  
-**Total tasks:** 57 across 11 phases
+**Last replanned:** SPEC::REFINE + PLAN::ARCHITECTURE + PLAN::TASKS 2026-05-11 — Phase 11 (Team Management) architecture; OrgInvite model (dedicated, not VerificationToken); header nav split from breadcrumb (breadcrumb now in page content); tasks.md audit (T-07, T-08 removed, T-10, T-17, T-25, T-26–T-29 marked complete)  
+**Total tasks:** 57 + Phase 11 tasks across 12 phases  
+**Current phase:** Phase 11 (Team Management) — in progress (2026-05-11)
 
 Phases must be executed in order. Each phase's output is a hard dependency for the next.
 
@@ -60,12 +61,12 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 ## Phase 2 — Auth UI + Onboarding
 **Goal:** Users can sign in and complete first-time org setup.
 
-- [ ] **T-07** Create `app/auth/signin/page.tsx`
+- [x] **T-07** Create `app/auth/signin/page.tsx`
   - Email input → `signIn('email', { email })`
   - States: default / submitting / sent
   - Post-sign-in redirect: `/onboarding` if `orgId` null, else `/`
 
-- [ ] **T-08** Create `app/onboarding/page.tsx`
+- [x] **T-08** ~~Create `app/onboarding/page.tsx`~~ **REMOVED** — WorkspaceNamePrompt + inline overlay approach dropped; org bootstrapped in signIn/session callbacks; `/onboarding` stubs redirect to `/`
   - Step 1: org name → `PATCH /api/org`
   - Step 2: optional invite (locked on Free)
   - Complete → redirect `/`
@@ -73,7 +74,9 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 - [ ] **T-09** Create `app/api/org/route.ts`
   - `PATCH { name }` → update `Organization.name` for session org
 
-- [ ] **T-10** Update `app/layout.tsx` / create `app/components/Nav.tsx`
+- [x] **T-10** Update `app/layout.tsx` / create `app/components/Nav.tsx`
+  - Implemented as `AppHeader` with plan badge, user dropdown (Settings + Sign out), and pro-gated nav links (Enrichments, Delivery)
+  - `Breadcrumb.tsx` created (2026-05-11); nav always visible; breadcrumb moved to page content
   - Authenticated: user avatar dropdown (sign out, settings), render `<UsageBanner />`
   - Unauthenticated: sign-in link
 
@@ -141,7 +144,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 ## Phase 4 — Enrich Quota + Usage Display
 **Goal:** Free-tier contact cap enforced at enrichment time; quota status visible in UI. Seats are NOT in scope — seat limits belong in Phase 9 (Team Management) where the enforcement point (`POST /api/org/invite`) lives.
 
-- [ ] **T-17** Create `app/lib/quota.ts`
+- [x] **T-17** Create `app/lib/quota.ts`
   - Source of truth for run + model limit constants **only** — no seat limits (deferred to Phase 9)
   - ```ts
     export const PLAN_RUN_LIMITS: Record<string, number> = {
@@ -210,7 +213,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 - [x] **T-24** `app/components/EnrichmentProgress.tsx` notify-me UX — **COMPLETE**
   - `notifyEmail` prop; shows "We'll email {email} when results are ready. You can safely close this tab." during enrichment
 
-- [ ] **T-25** Update `app/run/[runId]/score/page.tsx`
+- [x] **T-25** Update `app/run/[runId]/score/page.tsx`
   - Currently: assumes run is ready (fetches results immediately)
   - Add: if `run.status === 'enriching'`, render a `<EnrichingWait runId={runId} />` client component instead of the criteria builder
   - `EnrichingWait` polls `GET /api/runs/:runId/status` every 5s; on `status === 'scoring'` or `'complete'`: `router.refresh()` to re-render the server component with results
@@ -221,23 +224,23 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 ## Phase 6 — CSV Export
 **Goal:** Paid users can download full scored results as CSV.
 
-- [ ] **T-26** Create `app/lib/export.ts`
+- [x] **T-26** Create `app/lib/export.ts`
   - `buildExportCsv(runId, plan, topN?)` → CSV string
   - Columns: `rank`, `linkedin_url`, `total_score`, per-criterion scores, all enriched fields
   - Free: top 10 + `note` watermark column
   - Paid: all rows, no watermark
 
-- [ ] **T-27** Create `app/api/runs/[runId]/export/route.ts`
+- [x] **T-27** Create `app/api/runs/[runId]/export/route.ts`
   - `GET` → auth → verify run complete + belongs to org → `buildExportCsv` → `text/csv` stream
   - `Content-Disposition: attachment; filename="scorestack-{runId}-{date}.csv"`
   - Optional `?topN=N`
 
-- [ ] **T-28** Create `app/components/ExportButton.tsx`
+- [x] **T-28** Create `app/components/ExportButton.tsx`
   - Free: lock icon → `<UpgradeModal trigger="Export your full results" requiredPlan="starter" />`
   - Paid: download → `GET /api/runs/:runId/export`
   - Dropdown: Top 50 / Top 100 / All (when > 100 results)
 
-- [ ] **T-29** Update `app/run/[runId]/results/page.tsx`
+- [x] **T-29** Update `app/run/[runId]/results/page.tsx`
   - Add `<ExportButton runId={runId} plan={plan} />` to top-right of results section
 
 ---
@@ -333,10 +336,13 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-## Phase 9 — ConnectSafely Migration
-**Goal:** Replace LinkedAPI with ConnectSafely for delivery and enrichment, one feature at a time, keeping both providers co-existing via feature flags so the app remains fully functional throughout. Teams support deferred to Phase 10.
+## Phase 9 — Dual-Provider LinkedIn Architecture ✅
+**Goal:** Establish LinkedAPI and ConnectSafely as permanent co-existing providers with distinct roles, controlled via env vars. This is not a migration — LinkedAPI is retained.
 
-**Motivation:** The same LinkedAPI account is shared across other workflows; ConnectSafely achieves the same at a lower price point and uses a plain REST API (no SDK).
+- **ConnectSafely** — message delivery (`CONNECT_SAFELY_DELIVERY_ENABLED`)
+- **LinkedAPI** — data enrichment (`LINKED_API_ENRICHMENT_ENABLED`)
+
+**Motivation:** LinkedAPI is shared with other workflows and delivers richer enrichment data (industry, company_size). ConnectSafely handles delivery at a lower price point via plain REST. Separating roles lets each provider do what it does best.
 
 ---
 
@@ -438,59 +444,116 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
-### Stage 9c — Cleanup (remove LinkedAPI entirely)
-_Execute only after both flags are stable in production_
+## Phase 10a — Platform Generic Agent Delivery ✅
+**Completed:** 2026-05-08
 
-- [ ] **T-CS7** Remove `@linkedapi/node`
-  - `npm uninstall @linkedapi/node`
-  - Move `LinkedInProfile` and `FetchProfileResult` interfaces from `app/lib/linkedapi.ts` → `app/lib/connectsafely.ts`
-  - Update all imports: `app/api/enrich/route.ts`, `app/mocks/enrich.ts`, `app/lib/delivery.ts`
-  - Delete `app/lib/linkedapi.ts`
+**Gate:** Pro (unchanged)  
+**Goal:** Surface the existing platform delivery as a named identity ("ScoreStack Outreach Agent") and record identity mode on each job.
 
-- [ ] **T-CS8** Remove LinkedAPI env vars and migration flags
-  - Remove from `.env` / `.env.example`: `LINKED_API_TOKEN`, `LINKED_API_ID_TOKEN`, `LINKED_API_ENABLED`, `LINKED_API_TEST_DELIVERY`, `LINKED_API_TEST_DELIVERY_PROFILE`, `CONNECT_SAFELY_DELIVERY_ENABLED`, `CONNECT_SAFELY_ENRICHMENT_ENABLED`
-  - Update `app/lib/delivery.ts`: remove feature-flag branch, keep only ConnectSafely path
-  - Update delivery Architecture section in `architecture.md` to remove migration co-existence note
-  - Confirm app boots and a full run (upload → enrich → score → generate → deliver) completes with no LinkedAPI references
+### Delivery identity model
 
-  **Verification (9c):** `@linkedapi/node` absent from `node_modules`; app boots without `LINKED_API_*` vars; end-to-end run succeeds
+| Mode | Gate | Description |
+|------|------|-------------|
+| **Platform Generic Agent** | Pro | Messages sent from the ScoreStack outreach agent (our LinkedIn account). Zero setup — this is the default. |
+| **BYOK** | Pro | Org connects their own ConnectSafely API key. Messages sent from their own LinkedIn account. |
+
+### Tasks
+
+- [x] **T-10A1** Schema: add `deliveryIdentity` + `failureCode` to `DeliveryJob`
+  - `prisma/migrations/20260508120000_phase10_delivery_identity/migration.sql`
+
+- [x] **T-10A2** Update `app/lib/delivery.ts`
+  - BYOK key resolution; writes `deliveryIdentity` (`byok` or `platform_agent`) when starting a job
+
+- [x] **T-10A3** Update `app/components/DeliverySchedulerModal.tsx`
+  - Dynamic identity label: platform agent / BYOK connected / BYOK error (amber, Send blocked)
+  - Fetches `GET /api/org/integrations` on modal open
 
 ---
 
-## Phase 10 — Team Management
-**Goal:** Pro orgs can invite teammates; all data scoped to org.
+## Phase 10b — BYOK Delivery ✅
+**Completed:** 2026-05-08
 
-- [ ] **T-41** Create `app/api/org/members/route.ts`
+**Gate:** Pro  
+**Goal:** Pro org admins connect their own ConnectSafely API key. Credential errors abort the job early with actionable feedback — never silently fail the full batch.
+
+### Failure handling
+
+| Failure | Detection | Handling |
+|---------|-----------|----------|
+| Invalid/revoked API key | 401 from ConnectSafely | Abort job; mark all remaining messages `failed`; email user; set `connectSafelyLastError` in DB |
+| LinkedIn account disconnected | 403 / CS body | Same abort path; distinct error message |
+| Rate limited | 429 | Existing retry logic (2 retries, 3s); if exhausted, mark message `failed`, continue batch |
+| Transient network error | 5xx / timeout | Retry; if exhausted, mark message `failed`, continue batch |
+| `ENCRYPTION_KEY` missing | Env var absent | Throws on `credentials.ts` import — never silently falls back to platform key |
+
+**Job-abort rule:** auth errors (`auth_failed`, `account_disconnected`) are non-retryable and affect the whole account — stop the job immediately.
+
+### Tasks
+
+- [x] **T-10B1** Schema: `OrgIntegration` extended with `connectSafelyApiKey`, `connectSafelyVerifiedAt`, `connectSafelyLastError`
+
+- [x] **T-10B2** Create `app/lib/credentials.ts` — AES-256-GCM encrypt/decrypt + `getOrgConnectSafelyKey`
+
+- [x] **T-10B3** Update `app/lib/connectsafely.ts` — structured `SendResult` type; 401→`auth_failed`, 403→`account_disconnected`, 429→`rate_limited`; optional `apiKey` param
+
+- [x] **T-10B4** Update `app/lib/delivery.ts` — BYOK key resolution; abort-on-auth-error via `$transaction`
+
+- [x] **T-10B5** Update `app/lib/notify.ts` — `sendByokCredentialError` with error-code-specific email copy
+
+- [x] **T-10B6** Create `app/api/org/integrations/route.ts` — GET/POST/DELETE; POST validates key via test call before saving
+
+- [x] **T-10B7** Create `app/settings/integrations/page.tsx` + `ConnectSafelyCard.tsx` — three-state card (not connected / healthy / error); Connect modal with inline validation; Disconnect confirmation
+
+- [x] **T-10B8** Update `app/components/DeliverySchedulerModal.tsx` — dynamic sender label; Send blocked when `lastError` set
+
+**Post-ship refinements:**
+- `SettingsNav` tab strip added to both Billing and Integrations pages (Billing ↔ Integrations navigation)
+- Hardcoded `maskKey('cskey')` removed; masked key display uses static `cs_••••••••••••••••`
+- Header breadcrumb split (2026-05-11): `Breadcrumb.tsx` created; `breadcrumb` prop removed from `AppHeader`; Enrichments/Delivery nav links always visible when logged in; breadcrumb rendered in page content above `WorkflowStepper` on run pages; settings pages use `SettingsNav` active tab for location
+
+---
+
+## Phase 11 — Team Management ✅
+**Goal:** Pro orgs can invite teammates; all data scoped to org.
+**Completed:** 2026-05-11
+
+**Architecture deviation from original spec:** Uses dedicated `OrgInvite` model instead of `VerificationToken` (no role field in VerificationToken; dedicated model keeps concerns clean). Invite acceptance happens in signIn callback by email match — no URL token needed.
+
+- [x] **T-41** Create `app/api/org/members/route.ts`
   - `GET` → list `User` for org (id, name, email, role)
 
   Create `app/api/org/members/[userId]/route.ts`
   - `DELETE` → admin only → set `User.orgId = null`
 
-- [ ] **T-42** Create `app/api/org/invite/route.ts`
-  - `POST { email, role }` → admin + Pro+ gate → seat limit check (409 if exceeded)
-  - Create `VerificationToken` with `identifier = invite:{orgId}:{email}`
-  - Send invite email via Resend
+- [x] **T-42** Create `app/api/org/invite/route.ts`
+  - `POST { email, role }` → admin + Pro+ gate → seat limit check (409 if exceeded) → already-member check (409)
+  - Create `OrgInvite { orgId, email, role, token, expires: +7d }` (not VerificationToken)
+  - Send invite email via `sendOrgInvite` in `notify.ts`
   - Return `{ invited: true }`
 
-- [ ] **T-43** Update `app/lib/auth.ts` — invite acceptance
-  - In `callbacks.signIn`: check for `VerificationToken` with `identifier = invite:*:{email}`
-  - If found: set `User.orgId`, `User.role` from token → delete token
+- [x] **T-43** Update `app/lib/auth.ts` — invite acceptance
+  - In `callbacks.signIn`: check `OrgInvite` by email BEFORE org bootstrap
+  - If found + no orgId: join org + delete invite
+  - If found + has orgId: delete invite silently (existing org wins)
+  - Org bootstrap only runs if no orgId after invite check
 
-- [ ] **T-44** Create `app/settings/team/page.tsx`
-  - Members list with role badge, remove button (admin only)
-  - Seat counter "X / Y seats used"
-  - Invite form (email + role) — locked on Free/Starter with `<UpgradeModal />`
+- [x] **T-44** Create `app/settings/team/page.tsx` + `TeamCard.tsx`
+  - Members list with role badge, remove button (admin only, disabled on self)
+  - Pending invites list (active invites only, filtered by expires >= now)
+  - Seat counter "X / Y seats used" (hidden for enterprise)
+  - Invite form (email + role) — locked on Free/Starter with `<UpgradeModal requiredPlan="pro" />`
+  - `SettingsNav` updated with Team tab
 
-- [ ] **T-44b** Add seat limits to `app/lib/quota.ts` and wire enforcement
-  - Add `export const PLAN_SEAT_LIMITS: Record<string, number> = { free: 1, starter: 1, pro: 3, enterprise: -1 }`
-  - Update `app/api/usage/route.ts` to import `PLAN_SEAT_LIMITS` from `quota.ts` (remove local copy)
-  - `POST /api/org/invite`: count `prisma.user.count({ where: { orgId } })` → 409 `{ error: 'seat_limit_reached', limit }` if at limit
+- [x] **T-44b** Seat limits already in `app/lib/quota.ts` via `PlanLimit` DB model + `getPlanLimitsFor`
+  - `POST /api/org/invite`: uses `limits.seatLimit` from `getPlanLimitsFor` — no separate constant needed
+  - `prisma/migrations/20260511000000_org_invite/migration.sql` adds `org_invites` table
 
 ---
 
-## Phase 11 — Gates, Limits, Polish
+## Phase 12 — Gates, Limits, Polish
 **Goal:** All limits enforced; all queries org-scoped.
-**Note:** T-47 moved to Phase 4 (completes the quota story there). Phase 10 adds `PLAN_SEAT_LIMITS` to `quota.ts` and seat enforcement to invite route.
+**Note:** T-47 moved to Phase 4 (completes the quota story there). Phase 11 adds `PLAN_SEAT_LIMITS` to `quota.ts` and seat enforcement to invite route.
 
 - [ ] **T-45** Update `app/api/models/route.ts`
   - Import `PLAN_MODEL_LIMITS` from `quota.ts`
@@ -549,10 +612,15 @@ _Execute only after both flags are stable in production_
 | `app/components/DeliverySchedulerModal.tsx` | 8 |
 | `app/delivery/page.tsx` | 8 |
 | `app/lib/connectsafely.ts` | 9 |
-| `app/api/org/members/route.ts` | 10 |
-| `app/api/org/members/[userId]/route.ts` | 10 |
-| `app/api/org/invite/route.ts` | 10 |
-| `app/settings/team/page.tsx` | 10 |
+| `app/lib/credentials.ts` | 10b |
+| `app/api/org/integrations/route.ts` | 10b |
+| `app/settings/integrations/page.tsx` | 10b |
+| `app/api/org/members/route.ts` | 11 |
+| `app/api/org/members/[userId]/route.ts` | 11 |
+| `app/api/org/invite/route.ts` | 11 |
+| `app/settings/team/page.tsx` | 11 |
+| `app/settings/team/TeamCard.tsx` | 11 |
+| `app/components/Breadcrumb.tsx` | 10b post-ship |
 
 ## Modified files summary
 
@@ -601,10 +669,11 @@ LEMONSQUEEZY_CREDITS_5000_PRODUCT_ID=
 
 DELIVERY_DELAY_MS=3000
 
-ENCRYPTION_KEY=                        # 32-byte hex string — used for AES-256 BYOK credential encryption (Phase 8)
+ENCRYPTION_KEY=                        # 32-byte hex string — AES-256-GCM for BYOK credential storage (Phase 10)
 
-# Phase 9 — ConnectSafely migration
-CONNECT_SAFELY_API_KEY=                # ConnectSafely REST API key
-CONNECT_SAFELY_DELIVERY_ENABLED=       # true = route delivery through ConnectSafely (false = LinkedAPI fallback)
-CONNECT_SAFELY_ENRICHMENT_ENABLED=     # true = route enrichment through ConnectSafely (false = LinkedAPI fallback)
+# Phase 9 — Dual-provider LinkedIn architecture
+CONNECT_SAFELY_API_KEY=                # ConnectSafely REST API key (delivery)
+CONNECT_SAFELY_DELIVERY_ENABLED=       # true = route delivery through ConnectSafely (permanent control)
+CONNECT_SAFELY_ENRICHMENT_ENABLED=     # true = route enrichment through ConnectSafely (alternative)
+LINKED_API_ENRICHMENT_ENABLED=         # true = route enrichment through LinkedAPI (primary path; default)
 ```

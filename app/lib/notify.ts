@@ -71,6 +71,70 @@ export async function sendEnrichmentComplete(email: string, runId: string): Prom
   })
 }
 
+export async function sendByokCredentialError(
+  email: string,
+  jobId: string,
+  errorCode: 'auth_failed' | 'account_disconnected',
+): Promise<void> {
+  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://scorestack.io'
+  const integrationsUrl = `${baseUrl}/settings/integrations`
+
+  const detail =
+    errorCode === 'auth_failed'
+      ? 'Your ConnectSafely API key is no longer valid.'
+      : 'Your LinkedIn account appears to have been disconnected from ConnectSafely.'
+
+  await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL ?? 'noreply@scorestack.io',
+    to: email,
+    subject: 'Action needed: your LinkedIn connection needs attention',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#111;">
+        <h2 style="font-size:18px;font-weight:600;margin:0 0 8px;">Delivery stopped</h2>
+        <p style="font-size:14px;color:#555;margin:0 0 8px;">
+          ${detail} Your delivery job was stopped to avoid sending from an invalid account.
+        </p>
+        <p style="font-size:14px;color:#555;margin:0 0 24px;">
+          Reconnect your account in Settings → Integrations and restart the delivery job.
+        </p>
+        <a href="${integrationsUrl}"
+          style="display:inline-block;background:#2563eb;color:#fff;font-size:14px;font-weight:500;text-decoration:none;padding:10px 20px;border-radius:8px;">
+          Go to Integrations →
+        </a>
+        <p style="font-size:11px;color:#aaa;margin-top:24px;">Job ID: ${jobId}</p>
+      </div>
+    `,
+  })
+}
+
+export async function sendOrgInvite(
+  email: string,
+  orgName: string,
+  signInUrl: string,
+): Promise<void> {
+  await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL ?? 'noreply@scorestack.io',
+    to: email,
+    subject: `You've been invited to join ${orgName} on ScoreStack`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#111;">
+        <h2 style="font-size:18px;font-weight:600;margin:0 0 8px;">You're invited</h2>
+        <p style="font-size:14px;color:#555;margin:0 0 24px;">
+          <strong>${orgName}</strong> has invited you to join their ScoreStack workspace.
+          Click below to sign in and accept the invitation.
+        </p>
+        <a href="${signInUrl}"
+          style="display:inline-block;background:#2563eb;color:#fff;font-size:14px;font-weight:500;text-decoration:none;padding:10px 20px;border-radius:8px;">
+          Accept invite →
+        </a>
+        <p style="font-size:11px;color:#aaa;margin-top:24px;">
+          We'll send a magic link to this address. No password needed. This invitation expires in 7 days.
+        </p>
+      </div>
+    `,
+  })
+}
+
 export async function sendDeliveryComplete(
   email: string,
   jobId: string,
