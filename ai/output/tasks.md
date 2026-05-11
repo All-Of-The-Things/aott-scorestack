@@ -3,9 +3,9 @@
 **Phase:** EXECUTION  
 **Command:** BUILD::IMPLEMENT  
 **Source specs:** `/ai/output/specs/`
-**Last replanned:** PLAN::ARCHITECTURE + PLAN::TASKS 2026-05-07 — Dual-provider architecture made permanent (LinkedAPI = enrichment, ConnectSafely = delivery, env-var controlled); Stage 9c (LinkedAPI removal) dropped; BYOK promoted to Phase 10; Team Management → Phase 11; Gates/Polish → Phase 12  
-**Total tasks:** 57 across 12 phases  
-**Current phase:** Phase 11 (Team Management) — Phase 10a + 10b complete (2026-05-08)
+**Last replanned:** SPEC::REFINE + PLAN::ARCHITECTURE + PLAN::TASKS 2026-05-11 — Phase 11 (Team Management) architecture; OrgInvite model (dedicated, not VerificationToken); header nav split from breadcrumb (breadcrumb now in page content); tasks.md audit (T-07, T-08 removed, T-10, T-17, T-25, T-26–T-29 marked complete)  
+**Total tasks:** 57 + Phase 11 tasks across 12 phases  
+**Current phase:** Phase 11 (Team Management) — in progress (2026-05-11)
 
 Phases must be executed in order. Each phase's output is a hard dependency for the next.
 
@@ -61,12 +61,12 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 ## Phase 2 — Auth UI + Onboarding
 **Goal:** Users can sign in and complete first-time org setup.
 
-- [ ] **T-07** Create `app/auth/signin/page.tsx`
+- [x] **T-07** Create `app/auth/signin/page.tsx`
   - Email input → `signIn('email', { email })`
   - States: default / submitting / sent
   - Post-sign-in redirect: `/onboarding` if `orgId` null, else `/`
 
-- [ ] **T-08** Create `app/onboarding/page.tsx`
+- [x] **T-08** ~~Create `app/onboarding/page.tsx`~~ **REMOVED** — WorkspaceNamePrompt + inline overlay approach dropped; org bootstrapped in signIn/session callbacks; `/onboarding` stubs redirect to `/`
   - Step 1: org name → `PATCH /api/org`
   - Step 2: optional invite (locked on Free)
   - Complete → redirect `/`
@@ -74,7 +74,9 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 - [ ] **T-09** Create `app/api/org/route.ts`
   - `PATCH { name }` → update `Organization.name` for session org
 
-- [ ] **T-10** Update `app/layout.tsx` / create `app/components/Nav.tsx`
+- [x] **T-10** Update `app/layout.tsx` / create `app/components/Nav.tsx`
+  - Implemented as `AppHeader` with plan badge, user dropdown (Settings + Sign out), and pro-gated nav links (Enrichments, Delivery)
+  - `Breadcrumb.tsx` created (2026-05-11); nav always visible; breadcrumb moved to page content
   - Authenticated: user avatar dropdown (sign out, settings), render `<UsageBanner />`
   - Unauthenticated: sign-in link
 
@@ -142,7 +144,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 ## Phase 4 — Enrich Quota + Usage Display
 **Goal:** Free-tier contact cap enforced at enrichment time; quota status visible in UI. Seats are NOT in scope — seat limits belong in Phase 9 (Team Management) where the enforcement point (`POST /api/org/invite`) lives.
 
-- [ ] **T-17** Create `app/lib/quota.ts`
+- [x] **T-17** Create `app/lib/quota.ts`
   - Source of truth for run + model limit constants **only** — no seat limits (deferred to Phase 9)
   - ```ts
     export const PLAN_RUN_LIMITS: Record<string, number> = {
@@ -211,7 +213,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 - [x] **T-24** `app/components/EnrichmentProgress.tsx` notify-me UX — **COMPLETE**
   - `notifyEmail` prop; shows "We'll email {email} when results are ready. You can safely close this tab." during enrichment
 
-- [ ] **T-25** Update `app/run/[runId]/score/page.tsx`
+- [x] **T-25** Update `app/run/[runId]/score/page.tsx`
   - Currently: assumes run is ready (fetches results immediately)
   - Add: if `run.status === 'enriching'`, render a `<EnrichingWait runId={runId} />` client component instead of the criteria builder
   - `EnrichingWait` polls `GET /api/runs/:runId/status` every 5s; on `status === 'scoring'` or `'complete'`: `router.refresh()` to re-render the server component with results
@@ -222,23 +224,23 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 ## Phase 6 — CSV Export
 **Goal:** Paid users can download full scored results as CSV.
 
-- [ ] **T-26** Create `app/lib/export.ts`
+- [x] **T-26** Create `app/lib/export.ts`
   - `buildExportCsv(runId, plan, topN?)` → CSV string
   - Columns: `rank`, `linkedin_url`, `total_score`, per-criterion scores, all enriched fields
   - Free: top 10 + `note` watermark column
   - Paid: all rows, no watermark
 
-- [ ] **T-27** Create `app/api/runs/[runId]/export/route.ts`
+- [x] **T-27** Create `app/api/runs/[runId]/export/route.ts`
   - `GET` → auth → verify run complete + belongs to org → `buildExportCsv` → `text/csv` stream
   - `Content-Disposition: attachment; filename="scorestack-{runId}-{date}.csv"`
   - Optional `?topN=N`
 
-- [ ] **T-28** Create `app/components/ExportButton.tsx`
+- [x] **T-28** Create `app/components/ExportButton.tsx`
   - Free: lock icon → `<UpgradeModal trigger="Export your full results" requiredPlan="starter" />`
   - Paid: download → `GET /api/runs/:runId/export`
   - Dropdown: Top 50 / Top 100 / All (when > 100 results)
 
-- [ ] **T-29** Update `app/run/[runId]/results/page.tsx`
+- [x] **T-29** Update `app/run/[runId]/results/page.tsx`
   - Add `<ExportButton runId={runId} plan={plan} />` to top-right of results section
 
 ---
@@ -508,37 +510,44 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 **Post-ship refinements:**
 - `SettingsNav` tab strip added to both Billing and Integrations pages (Billing ↔ Integrations navigation)
 - Hardcoded `maskKey('cskey')` removed; masked key display uses static `cs_••••••••••••••••`
+- Header breadcrumb split (2026-05-11): `Breadcrumb.tsx` created; `breadcrumb` prop removed from `AppHeader`; Enrichments/Delivery nav links always visible when logged in; breadcrumb rendered in page content above `WorkflowStepper` on run pages; settings pages use `SettingsNav` active tab for location
 
 ---
 
-## Phase 11 — Team Management
+## Phase 11 — Team Management ✅
 **Goal:** Pro orgs can invite teammates; all data scoped to org.
+**Completed:** 2026-05-11
 
-- [ ] **T-41** Create `app/api/org/members/route.ts`
+**Architecture deviation from original spec:** Uses dedicated `OrgInvite` model instead of `VerificationToken` (no role field in VerificationToken; dedicated model keeps concerns clean). Invite acceptance happens in signIn callback by email match — no URL token needed.
+
+- [x] **T-41** Create `app/api/org/members/route.ts`
   - `GET` → list `User` for org (id, name, email, role)
 
   Create `app/api/org/members/[userId]/route.ts`
   - `DELETE` → admin only → set `User.orgId = null`
 
-- [ ] **T-42** Create `app/api/org/invite/route.ts`
-  - `POST { email, role }` → admin + Pro+ gate → seat limit check (409 if exceeded)
-  - Create `VerificationToken` with `identifier = invite:{orgId}:{email}`
-  - Send invite email via Resend
+- [x] **T-42** Create `app/api/org/invite/route.ts`
+  - `POST { email, role }` → admin + Pro+ gate → seat limit check (409 if exceeded) → already-member check (409)
+  - Create `OrgInvite { orgId, email, role, token, expires: +7d }` (not VerificationToken)
+  - Send invite email via `sendOrgInvite` in `notify.ts`
   - Return `{ invited: true }`
 
-- [ ] **T-43** Update `app/lib/auth.ts` — invite acceptance
-  - In `callbacks.signIn`: check for `VerificationToken` with `identifier = invite:*:{email}`
-  - If found: set `User.orgId`, `User.role` from token → delete token
+- [x] **T-43** Update `app/lib/auth.ts` — invite acceptance
+  - In `callbacks.signIn`: check `OrgInvite` by email BEFORE org bootstrap
+  - If found + no orgId: join org + delete invite
+  - If found + has orgId: delete invite silently (existing org wins)
+  - Org bootstrap only runs if no orgId after invite check
 
-- [ ] **T-44** Create `app/settings/team/page.tsx`
-  - Members list with role badge, remove button (admin only)
-  - Seat counter "X / Y seats used"
-  - Invite form (email + role) — locked on Free/Starter with `<UpgradeModal />`
+- [x] **T-44** Create `app/settings/team/page.tsx` + `TeamCard.tsx`
+  - Members list with role badge, remove button (admin only, disabled on self)
+  - Pending invites list (active invites only, filtered by expires >= now)
+  - Seat counter "X / Y seats used" (hidden for enterprise)
+  - Invite form (email + role) — locked on Free/Starter with `<UpgradeModal requiredPlan="pro" />`
+  - `SettingsNav` updated with Team tab
 
-- [ ] **T-44b** Add seat limits to `app/lib/quota.ts` and wire enforcement
-  - Add `export const PLAN_SEAT_LIMITS: Record<string, number> = { free: 1, starter: 1, pro: 3, enterprise: -1 }`
-  - Update `app/api/usage/route.ts` to import `PLAN_SEAT_LIMITS` from `quota.ts` (remove local copy)
-  - `POST /api/org/invite`: count `prisma.user.count({ where: { orgId } })` → 409 `{ error: 'seat_limit_reached', limit }` if at limit
+- [x] **T-44b** Seat limits already in `app/lib/quota.ts` via `PlanLimit` DB model + `getPlanLimitsFor`
+  - `POST /api/org/invite`: uses `limits.seatLimit` from `getPlanLimitsFor` — no separate constant needed
+  - `prisma/migrations/20260511000000_org_invite/migration.sql` adds `org_invites` table
 
 ---
 
@@ -610,6 +619,8 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 | `app/api/org/members/[userId]/route.ts` | 11 |
 | `app/api/org/invite/route.ts` | 11 |
 | `app/settings/team/page.tsx` | 11 |
+| `app/settings/team/TeamCard.tsx` | 11 |
+| `app/components/Breadcrumb.tsx` | 10b post-ship |
 
 ## Modified files summary
 
