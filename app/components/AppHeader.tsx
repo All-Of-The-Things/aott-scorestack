@@ -24,7 +24,7 @@ const PLAN_BADGE: Record<string, string> = {
 
 const NAV_LINKS = [
   { href: '/runs', label: 'Enrichments' },
-  { href: '/delivery', label: 'Delivery', proOnly: true },
+  { href: '/delivery', label: 'Deliveries' },
 ]
 
 export default function AppHeader({ userEmail, modelName, plan }: AppHeaderProps) {
@@ -61,7 +61,7 @@ export default function AppHeader({ userEmail, modelName, plan }: AppHeaderProps
 
           {userEmail && (
             <div className="hidden sm:flex items-center gap-0.5 ml-1 shrink-0">
-              {NAV_LINKS.filter((link) => !link.proOnly || plan === 'pro' || plan === 'enterprise').map((link) => {
+              {NAV_LINKS.map((link) => {
                 const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
                 return (
                   <Link

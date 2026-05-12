@@ -8,21 +8,22 @@ interface Props {
 }
 
 export default async function ConfirmedPage({ searchParams }: Props) {
-  const session = await auth()
-
-  if (!session) {
-    redirect('/auth/signin')
-  }
-
-  // Primary: destination is encoded in the URL by SignInForm (survives cross-device clicks).
-  // Fallback: cookie set by SignInForm for same-browser flows.
+  // Compute destination before the session check so the fallback redirect can
+  // preserve it. Primary: URL param (survives cross-device). Fallback: cookie.
   const urlNext = searchParams.next?.startsWith('/') ? searchParams.next : null
 
   const cookieStore = cookies()
   const raw        = cookieStore.get('auth_next')?.value
-  const cookieNext = raw && decodeURIComponent(raw).startsWith('/') ? decodeURIComponent(raw) : null
+  const decoded    = raw ? decodeURIComponent(raw) : null
+  const cookieNext = decoded?.startsWith('/') ? decoded : null
 
   const next = urlNext ?? cookieNext ?? '/'
+
+  const session = await auth()
+
+  if (!session) {
+    redirect(`/auth/signin?callbackUrl=${encodeURIComponent(next)}`)
+  }
 
   return <ConfirmedClient email={session.user.email ?? ''} next={next} />
 }

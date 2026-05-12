@@ -58,11 +58,12 @@ export default function EnrichPage() {
 
     if (notifyEmail && status !== 'authenticated') {
       try {
-        document.cookie = `auth_next=${encodeURIComponent(`/run/${runId}/score`)}; path=/; max-age=600; SameSite=Lax`
+        const dest = `/run/${runId}/score`
+        document.cookie = `auth_next=${encodeURIComponent(dest)}; path=/; max-age=600; SameSite=Lax`
         const result = await signIn('resend', {
           email:       notifyEmail,
           redirect:    false,
-          callbackUrl: '/auth/confirmed',
+          callbackUrl: `/auth/confirmed?next=${encodeURIComponent(dest)}`,
         })
         if (!result?.error) {
           setStage('link-sent')
