@@ -54,6 +54,7 @@ function StatusBadge({ status }: { status: string }) {
 export default async function BillingPage() {
   const session = await auth()
   if (!session) redirect('/auth/signin?callbackUrl=/settings/billing')
+  if (session.user.role !== 'admin') redirect('/runs')
 
   let orgId = session.user.orgId
   if (!orgId) {

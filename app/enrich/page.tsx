@@ -120,7 +120,7 @@ export default function EnrichPage() {
   if (stage === 'choose' && confirmed) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
+        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
         <div className="flex items-center justify-center px-4 py-16">
           <div className="w-full max-w-lg">
             <EnrichmentChoice
@@ -139,7 +139,7 @@ export default function EnrichPage() {
   if (stage === 'enriching' && confirmed) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
+        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
         <div className="flex items-center justify-center px-4 py-16">
           <div className="w-full max-w-md">
             <EnrichmentProgress

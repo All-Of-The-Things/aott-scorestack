@@ -58,6 +58,8 @@ export default async function RunsPage() {
       <AppHeader
         userEmail={session.user.email}
         plan={session.user.plan}
+        orgName={session.user.orgName}
+        role={session.user.role}
       />
 
       <main className="bg-gray-50 min-h-screen">

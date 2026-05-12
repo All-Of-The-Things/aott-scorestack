@@ -30,6 +30,9 @@ export async function POST(req: Request) {
   const existing = await prisma.user.findFirst({ where: { email: inviteEmail, orgId } })
   if (existing) return NextResponse.json({ error: 'already_member' }, { status: 409 })
 
+  const pendingInvite = await prisma.orgInvite.findFirst({ where: { email: inviteEmail, orgId, expires: { gte: new Date() } } })
+  if (pendingInvite) return NextResponse.json({ error: 'already_invited' }, { status: 409 })
+
   const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
   if (!org) return NextResponse.json({ error: 'org_not_found' }, { status: 404 })
 
@@ -39,7 +42,7 @@ export async function POST(req: Request) {
   })
 
   const baseUrl = process.env.NEXTAUTH_URL ?? 'https://scorestack.io'
-  const signInUrl = `${baseUrl}/auth/signin?callbackUrl=${encodeURIComponent('/settings/team')}`
+  const signInUrl = `${baseUrl}/auth/signin?callbackUrl=${encodeURIComponent('/runs')}`
   await sendOrgInvite(inviteEmail, org.name, signInUrl)
 
   return NextResponse.json({ invited: true })

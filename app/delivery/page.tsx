@@ -16,7 +16,7 @@ export default async function DeliveryPage() {
   if (!isPro) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={session.user.email} plan={session.user.plan} />
+        <AppHeader userEmail={session.user.email} plan={session.user.plan} orgName={session.user.orgName} role={session.user.role} />
         <main className="max-w-5xl mx-auto px-4 py-8">
           <div className="mb-6">
             <h1 className="text-lg font-semibold text-gray-900">Deliveries</h1>

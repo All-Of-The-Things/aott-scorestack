@@ -20,7 +20,7 @@ export default async function TeamPage() {
   if (!isPro) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={email} plan={plan} />
+        <AppHeader userEmail={email} plan={plan} orgName={session.user.orgName} role={role} />
         <main className="max-w-2xl mx-auto px-4 py-10">
           <SettingsNav />
           <div className="space-y-6">

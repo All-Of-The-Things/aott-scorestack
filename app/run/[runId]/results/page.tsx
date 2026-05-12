@@ -185,6 +185,8 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
         userEmail={session.user.email}
         plan={session.user.plan}
         modelName={run.model?.name ?? null}
+        orgName={session.user.orgName}
+        role={session.user.role}
       />
 
       <main className="bg-gray-50">
