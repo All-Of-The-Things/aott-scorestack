@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "org_invites" ALTER COLUMN "expires" SET DATA TYPE TIMESTAMP(3),
+ALTER COLUMN "created_at" SET DATA TYPE TIMESTAMP(3);
