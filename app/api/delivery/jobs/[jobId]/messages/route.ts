@@ -29,7 +29,7 @@ export async function GET(
       deliveryStatus: true,
       sentAt: true,
       runResult: {
-        select: { linkedinUrl: true, rowIndex: true },
+        select: { linkedinUrl: true, rowIndex: true, enrichedData: true },
       },
     },
     orderBy: { runResult: { rowIndex: 'asc' } },
