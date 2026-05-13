@@ -60,6 +60,12 @@ export async function generateMessages(
 
   async function generateOne(result: typeof results[number]): Promise<void> {
     try {
+      const enriched = (result.enrichedData ?? {}) as Record<string, unknown>
+      const firstName =
+        (enriched.first_name as string | null | undefined) ??
+        (enriched.full_name as string | null | undefined)?.split(' ')[0] ??
+        null
+
       const response = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
@@ -74,7 +80,7 @@ export async function generateMessages(
           {
             role: 'user',
             content: JSON.stringify({
-              enrichedData: result.enrichedData,
+              enrichedData: { ...enriched, first_name: firstName },
               criterionScores: result.criterionScores,
             }),
           },
