@@ -1,6 +1,7 @@
 import LinkedApi, { LinkedApiError } from '@linkedapi/node'
 import { enrichMock } from '../mocks/enrich'
 import { fetchProfile as csFetchProfile, deriveSeniority } from './connectsafely'
+import { bucketCompanySize } from './fields'
 
 export interface LinkedInProfile {
   linkedin_url: string
@@ -12,7 +13,8 @@ export interface LinkedInProfile {
   seniority: string | null
   company_name: string | null
   industry: string | null
-  company_size: string | null
+  company_size: string | null   // bracket range, e.g. '51-200'
+  employee_count: string | null // raw count, e.g. '150'
   location: string | null
 }
 
@@ -104,6 +106,7 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
       company_name: person.companyName || null,
       industry: null,
       company_size: null,
+      employee_count: null,
       location: person.location || null,
     }
 
@@ -116,7 +119,10 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
         if (companyResult.errors.length === 0 && companyResult.data) {
           const co = companyResult.data
           profile.industry = co.industry || null
-          profile.company_size = co.employeesCount != null ? String(co.employeesCount) : null
+          if (co.employeesCount != null) {
+            profile.company_size = bucketCompanySize(co.employeesCount)
+            profile.employee_count = String(co.employeesCount)
+          }
         }
       } catch {
         console.warn("Failed to fetch company data for URL:", person.companyHashedUrl)

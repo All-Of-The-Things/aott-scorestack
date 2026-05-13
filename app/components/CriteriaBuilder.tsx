@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { Criterion, MatchType } from '@/app/lib/scoring'
 import type { Plan } from '@/app/generated/prisma'
 import UpgradeModal from '@/app/components/UpgradeModal'
+import { FIELD_ALLOWED_VALUES } from '@/app/lib/fields'
 
 // ---------------------------------------------------------------------------
 // CriteriaBuilder — client component
@@ -31,6 +32,7 @@ interface CriteriaBuilderProps {
   availableFields: string[]
   initialCriteria?: Criterion[]
   plan: Plan
+  enrichmentPreview?: Array<Record<string, string | null>>
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -48,6 +50,9 @@ const MATCH_TYPE_OPTIONS: { value: MatchType; label: string }[] = [
   { value: 'range', label: 'Numeric range' },
 ]
 
+// Reserved for any future truly-numeric fields where range evaluation applies.
+const NUMERIC_FIELDS = new Set<string>()
+
 function emptyCriterion(field: string): Criterion {
   return {
     field,
@@ -59,7 +64,7 @@ function emptyCriterion(field: string): Criterion {
   }
 }
 
-export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [], plan }: CriteriaBuilderProps) {
+export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [], plan, enrichmentPreview }: CriteriaBuilderProps) {
   const router = useRouter()
   const [criteria, setCriteria] = useState<Criterion[]>(initialCriteria)
   // Raw text for each criterion's values input — decoupled from parsed match_values
@@ -142,6 +147,11 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
   // ---------------------------------------------------------------------------
   const totalWeight = criteria.reduce((sum, c) => sum + (c.weight || 0), 0)
   const weightsValid = criteria.length === 0 || totalWeight === 100
+  const valuesValid = criteria.length === 0 || criteria.every((c, i) =>
+    FIELD_ALLOWED_VALUES[c.field]
+      ? c.match_values.length > 0
+      : (rawValues[i] ?? '').split(/[,\n]/).some((s) => s.trim().length > 0)
+  )
 
   // Fields referenced in criteria that have no enriched data in this run.
   const noDataFields = Array.from(new Set(
@@ -167,9 +177,17 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
     setScoring(true)
     setConfirmingScore(false)
     setScoreError(null)
+    // Flush any uncommitted raw input values into match_values before submitting.
+    // The user may click "Score" without blurring the active input, leaving
+    // criteria.match_values stale relative to rawValues.
+    const flushed: Criterion[] = criteria.map((c, i) => {
+      if (FIELD_ALLOWED_VALUES[c.field]) return c  // chip-managed, already committed
+      const parts = (rawValues[i] ?? '').split(/[,\n]/).map((s) => s.trim()).filter(Boolean)
+      return { ...c, match_values: parts }
+    })
     const submitCriteria = noDataFields.length > 0 && scorableCriteria.length > 0
-      ? normalizeWeights(scorableCriteria)
-      : criteria
+      ? normalizeWeights(flushed.filter((c) => availableFields.includes(c.field)))
+      : flushed
     try {
       const res = await fetch('/api/score', {
         method: 'POST',
@@ -190,7 +208,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
   }
 
   function handleScore() {
-    if (!weightsValid || criteria.length === 0) return
+    if (!weightsValid || !valuesValid || criteria.length === 0) return
     if (noDataFields.length > 0) { setConfirmingScore(true); return }
     doScore()
   }
@@ -268,6 +286,45 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
         </div>
       </div>
     )}
+    {enrichmentPreview && enrichmentPreview.length > 0 && (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-4">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-xs font-semibold text-gray-700">Sample data</h2>
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Use these values from your enriched contacts to build your criteria.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b border-gray-100">
+                {Object.values(FIELD_LABELS).map((label) => (
+                  <th key={label} className="px-4 py-2 text-left font-medium text-gray-500 whitespace-nowrap">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {enrichmentPreview.map((row, i) => (
+                <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
+                  {Object.keys(FIELD_LABELS).map((field) => (
+                    <td key={field} className="px-4 py-2 whitespace-nowrap max-w-[160px]">
+                      {row[field]
+                        ? FIELD_ALLOWED_VALUES[field]
+                          ? <span className="inline-flex text-[11px] font-medium px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700">{row[field]}</span>
+                          : <span className="text-xs text-gray-700 truncate block">{row[field]}</span>
+                        : <span className="text-gray-300">—</span>
+                      }
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
@@ -315,7 +372,17 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
                 </label>
                 <select
                   value={criterion.field}
-                  onChange={(e) => updateCriterion(i, { field: e.target.value })}
+                  onChange={(e) => {
+                    const field = e.target.value
+                    const patch: Partial<Criterion> = { field }
+                    if (FIELD_ALLOWED_VALUES[field]) {
+                      patch.match_type = 'list'
+                      patch.match_values = []
+                    } else if (criterion.match_type === 'range' && !NUMERIC_FIELDS.has(field)) {
+                      patch.match_type = 'list'
+                    }
+                    updateCriterion(i, patch)
+                  }}
                   className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
                 >
                   {!availableFields.includes(criterion.field) && (
@@ -332,30 +399,65 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
               {/* Match type */}
               <div>
                 <label className="block text-[10px] text-gray-400 mb-1">Match type</label>
-                <select
-                  value={criterion.match_type}
-                  onChange={(e) => updateCriterion(i, { match_type: e.target.value as MatchType })}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                >
-                  {MATCH_TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                {FIELD_ALLOWED_VALUES[criterion.field] ? (
+                  <span className="inline-flex items-center h-[30px] text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2">
+                    One of list
+                  </span>
+                ) : (
+                  <select
+                    value={criterion.match_type}
+                    onChange={(e) => updateCriterion(i, { match_type: e.target.value as MatchType })}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  >
+                    {MATCH_TYPE_OPTIONS.filter(
+                      (o) => o.value !== 'range' || NUMERIC_FIELDS.has(criterion.field)
+                    ).map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Values */}
               <div>
                 <label className="block text-[10px] text-gray-400 mb-1">
-                  {criterion.match_type === 'range' ? 'Min, Max' : 'Values (comma-separated)'}
+                  {FIELD_ALLOWED_VALUES[criterion.field] ? 'Levels' : criterion.match_type === 'range' ? 'Min, Max' : 'Values (comma-separated)'}
                 </label>
-                <input
-                  type="text"
-                  value={rawValues[i] ?? ''}
-                  onChange={(e) => setRawValue(i, e.target.value)}
-                  onBlur={(e) => commitMatchValues(i, e.target.value)}
-                  placeholder={criterion.match_type === 'range' ? '50, 500' : 'Director, VP, C-Level'}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                />
+                {FIELD_ALLOWED_VALUES[criterion.field] ? (
+                  <div className="flex flex-wrap gap-1">
+                    {FIELD_ALLOWED_VALUES[criterion.field]!.map((val) => {
+                      const selected = criterion.match_values.includes(val)
+                      return (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => {
+                            const next = selected
+                              ? criterion.match_values.filter((v) => v !== val)
+                              : [...criterion.match_values, val]
+                            updateCriterion(i, { match_values: next })
+                          }}
+                          className={`text-[11px] font-medium px-2 py-1 rounded-lg border transition-colors ${
+                            selected
+                              ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                              : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {val}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={rawValues[i] ?? ''}
+                    onChange={(e) => setRawValue(i, e.target.value)}
+                    onBlur={(e) => commitMatchValues(i, e.target.value)}
+                    placeholder={criterion.match_type === 'range' ? '50, 500' : 'Director, VP, C-Level'}
+                    className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  />
+                )}
               </div>
 
               {/* Score if match */}
@@ -427,7 +529,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
 
       {/* Weight sum indicator */}
       {criteria.length > 0 && (
-        <div className={`mb-4 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${
+        <div className={`mb-2 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${
           weightsValid
             ? 'text-green-700 bg-green-50 border-green-100'
             : 'text-amber-700 bg-amber-50 border-amber-100'
@@ -435,6 +537,14 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${weightsValid ? 'bg-green-500' : 'bg-amber-400'}`} />
           Weights total: <strong>{totalWeight}</strong> / 100
           {!weightsValid && ' — must equal 100 before scoring'}
+        </div>
+      )}
+
+      {/* Values validation indicator */}
+      {criteria.length > 0 && !valuesValid && (
+        <div className="mb-4 flex items-center gap-2 text-xs px-3 py-2 rounded-lg border text-amber-700 bg-amber-50 border-amber-100">
+          <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-400" />
+          Every criterion must have at least one value before scoring
         </div>
       )}
 
@@ -448,7 +558,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
       {/* Submit */}
       <button
         onClick={handleScore}
-        disabled={scoring || criteria.length === 0 || !weightsValid}
+        disabled={scoring || criteria.length === 0 || !weightsValid || !valuesValid}
         className="w-full py-2.5 text-sm font-semibold text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {scoring ? 'Scoring…' : 'Score contacts →'}

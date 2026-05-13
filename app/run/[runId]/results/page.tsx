@@ -12,6 +12,7 @@ import WorkflowStepper from '@/app/components/WorkflowStepper'
 import ResultsTabBar from '@/app/components/ResultsTabBar'
 import MessagesTab from '@/app/components/MessagesTab'
 import { getPlanLimitsFor } from '@/app/lib/quota'
+import { FIELD_ALLOWED_VALUES } from '@/app/lib/fields'
 
 const FIELD_LABELS: Record<string, string> = {
   current_title: 'Current Title',
@@ -275,9 +276,19 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
                       <span className="text-gray-400">
                         {MATCH_TYPE_LABELS[c.match_type] ?? c.match_type}:
                       </span>
-                      <span className="text-gray-600 flex-1 truncate">
-                        {c.match_values.join(', ')}
-                      </span>
+                      {FIELD_ALLOWED_VALUES[c.field] ? (
+                        <span className="flex flex-wrap gap-1 flex-1">
+                          {c.match_values.map((v) => (
+                            <span key={v} className="text-[11px] font-medium px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700">
+                              {v}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 flex-1 truncate">
+                          {c.match_values.join(', ')}
+                        </span>
+                      )}
                       <span className="shrink-0 text-[10px] font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">
                         {c.weight}%
                       </span>

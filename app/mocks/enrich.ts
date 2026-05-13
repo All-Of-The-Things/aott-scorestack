@@ -12,5 +12,6 @@ export const enrichMock = (): LinkedInProfile => ({
   company_name: faker.company.name(),
   industry: faker.commerce.department(),
   company_size: faker.helpers.arrayElement(['1-10', '11-50', '51-200', '201-500', '500+']),
+  employee_count: null,
   location: faker.location.city() + ', ' + faker.location.country(),
 });
