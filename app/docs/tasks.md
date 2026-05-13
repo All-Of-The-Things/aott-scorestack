@@ -71,7 +71,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - Step 2: optional invite (locked on Free)
   - Complete → redirect `/`
 
-- [ ] **T-09** Create `app/api/org/route.ts`
+- [x] **T-09** Create `app/api/org/route.ts`
   - `PATCH { name }` → update `Organization.name` for session org
 
 - [x] **T-10** Update `app/layout.tsx` / create `app/components/Nav.tsx`
@@ -157,7 +157,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - Update `app/api/usage/route.ts` to import `PLAN_RUN_LIMITS` and `PLAN_MODEL_LIMITS` from `quota.ts`; remove the duplicate local constant blocks
   - Note: `usage/route.ts` already returns `seats`/`seatsLimit` (computed from `PLAN_SEAT_LIMITS` defined locally there). Leave those fields as-is — they are harmless and will be wired to enforcement in Phase 9. Do NOT add `PLAN_SEAT_LIMITS` to `quota.ts` yet.
 
-- [ ] **T-18** Update `app/api/enrich/route.ts`
+- [x] **T-18** Update `app/api/enrich/route.ts`
   - Import `PLAN_RUN_LIMITS` from `quota.ts`
   - Quota check runs **inside the SSE stream handler**, after CSV parse and before the first enrichment call:
     ```ts
@@ -177,7 +177,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 - [x] **T-19** `app/api/usage/route.ts` — **COMPLETE** (implemented in Phase 3)
   - After T-17: import run + model constants from `quota.ts`; local `PLAN_SEAT_LIMITS` stays until Phase 9
 
-- [ ] **T-20** Create `app/components/UsageBanner.tsx`
+- [x] **T-20** Create `app/components/UsageBanner.tsx`
   - Client component (`'use client'`); calls `GET /api/usage` via `useState + useEffect`
   - Skip render entirely when `useSession().status !== 'authenticated'`
   - **Free plan:** Text pill — "Free plan · 50 contacts per run" + "Upgrade →" link to `/settings/billing`. No progress bar.
@@ -188,7 +188,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - **Enterprise:** return null
   - Placement: included by individual pages below `<AppHeader />` (not in `app/layout.tsx` — no session context there). Include on: `/`, `/run/[runId]/score`, `/run/[runId]/results`
 
-- [ ] **T-47** (moved from Phase 10) Update `app/components/EnrichmentProgress.tsx`
+- [x] **T-47** (moved from Phase 10) Update `app/components/EnrichmentProgress.tsx`
   - Handle SSE `{ type: 'error', code: 'quota_exceeded' }` distinctly from generic errors
   - Instead of the generic error panel, open `<UpgradeModal trigger="You've reached your 50-contact limit" requiredPlan="starter" />`
   - Generic `{ type: 'error' }` (no code or different code) still renders the existing error panel
@@ -205,7 +205,7 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 - [x] **T-22** `app/api/enrich/route.ts` notify_email handling — **COMPLETE**
   - Accepts `notify_email` in body; stores in `Run.notifyEmail`; sends completion email + creates `EnrichmentNotification` on finish
 
-- [ ] **T-23** Create `app/api/runs/[runId]/status/route.ts`
+- [x] **T-23** Create `app/api/runs/[runId]/status/route.ts`
   - `GET` → no auth required
   - Returns `{ status, enrichedCount, failedCount, totalContacts, completedAt }`
   - Used by the score page when a run is still in progress on load
@@ -555,20 +555,20 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 **Goal:** All limits enforced; all queries org-scoped.
 **Note:** T-47 moved to Phase 4 (completes the quota story there). Phase 11 adds `PLAN_SEAT_LIMITS` to `quota.ts` and seat enforcement to invite route.
 
-- [ ] **T-45** Update `app/api/models/route.ts`
+- [x] **T-45** Update `app/api/models/route.ts`
   - Import `PLAN_MODEL_LIMITS` from `quota.ts`
   - `POST`: count org models → 409 `{ error: 'model_limit_reached', limit, plan }` if at plan limit
 
-- [ ] **T-46** Update `app/components/SaveModelButton.tsx`
+- [x] **T-46** Update `app/components/SaveModelButton.tsx`
   - On 409: open `<UpgradeModal trigger="You've reached your model limit" requiredPlan="starter" />`
 
-- [ ] **T-48** Scope existing queries to `orgId`
+- [x] **T-48** Scope existing queries to `orgId`
   - `app/api/models/route.ts` — filter by `orgId`
   - `app/api/score/route.ts` — verify run belongs to org
   - `app/api/suggest/route.ts` — verify run belongs to org
   - `app/api/enrich/route.ts` — attach `userId` + `orgId` to run on creation (T-18 adds `userId` via session; add `orgId` in same change)
 
-- [ ] **T-49** Verify billing success redirect
+- [x] **T-49** Verify billing success redirect — handled by `/settings/billing/confirmation` page
   - Confirm `/settings/billing?success=1` optimistic plan display resolves correctly after LS webhook fires
 
 ---

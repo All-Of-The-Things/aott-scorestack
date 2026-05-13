@@ -271,6 +271,18 @@ export async function POST(request: NextRequest) {
         },
       })
 
+      // Record usage for org-owned runs
+      if (orgId) {
+        await prisma.usageLog.create({
+          data: {
+            orgId,
+            runId,
+            contactsConsumed: enrichedCount,
+            enrichmentSource: 'managed_credits',
+          },
+        })
+      }
+
       // Send enrichment completion email if the user chose "notify me"
       if (notify_email) {
         try {

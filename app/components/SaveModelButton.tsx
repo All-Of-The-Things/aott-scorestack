@@ -5,6 +5,7 @@ import { useSession, signIn } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import type { Criterion } from '@/app//lib/scoring'
 import SaveModelModal from '@/app/components/SaveModelModal'
+import UpgradeModal from '@/app/components/UpgradeModal'
 
 interface SaveModelButtonProps {
   criteria: Criterion[]
@@ -20,9 +21,10 @@ interface SaveModelButtonProps {
 }
 
 export default function SaveModelButton({ criteria, savedModelName, runId, knownEmail }: SaveModelButtonProps) {
-  const { status } = useSession()
+  const { status, data: session } = useSession()
   const pathname = usePathname()
   const [showModal, setShowModal] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [modelName, setModelName] = useState<string | null>(savedModelName)
   const [linkSent, setLinkSent] = useState(false)
   const [sendingLink, setSendingLink] = useState(false)
@@ -150,8 +152,16 @@ export default function SaveModelButton({ criteria, savedModelName, runId, known
           runId={runId}
           onClose={() => setShowModal(false)}
           onSaved={handleSaved}
+          onLimitReached={() => { setShowModal(false); setShowUpgradeModal(true) }}
         />
       )}
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        trigger="You've reached your model limit"
+        requiredPlan="starter"
+        currentPlan={(session?.user?.plan as 'free' | 'starter' | 'pro' | 'enterprise') ?? 'free'}
+      />
     </>
   )
 }

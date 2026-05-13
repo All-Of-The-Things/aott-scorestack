@@ -8,13 +8,13 @@ interface SaveModelModalProps {
   runId?: string
   onClose: () => void
   onSaved: (modelId: string, modelName: string) => void
+  onLimitReached?: () => void
 }
 
-export default function SaveModelModal({ criteria, runId, onClose, onSaved }: SaveModelModalProps) {
+export default function SaveModelModal({ criteria, runId, onClose, onSaved, onLimitReached }: SaveModelModalProps) {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [limitReached, setLimitReached] = useState<{ limit: number; plan: string } | null>(null)
 
   const handleSave = useCallback(async () => {
     if (!name.trim() || saving) return
@@ -32,7 +32,8 @@ export default function SaveModelModal({ criteria, runId, onClose, onSaved }: Sa
       if (!res.ok) {
         const data = await res.json()
         if (res.status === 409 && data.error === 'model_limit_reached') {
-          setLimitReached({ limit: data.limit, plan: data.plan })
+          onLimitReached?.()
+          onClose()
         } else {
           setError(data.error ?? `Save failed (${res.status})`)
         }
@@ -95,26 +96,6 @@ export default function SaveModelModal({ criteria, runId, onClose, onSaved }: Sa
           {criteria.length} criteria &middot; weights sum to 100
         </p>
 
-        {/* Model limit reached — upgrade prompt */}
-        {limitReached && (
-          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-xs font-medium text-amber-800">
-              {limitReached.plan === 'free'
-                ? `You've reached your ${limitReached.limit}-model limit on the free plan.`
-                : `You've reached your ${limitReached.limit}-model limit.`}
-            </p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Upgrade to Starter to save up to 5 models, or Pro for unlimited.
-            </p>
-            <a
-              href="/settings/billing"
-              className="inline-block mt-2 text-xs font-medium text-amber-900 underline hover:text-amber-700"
-            >
-              View upgrade options →
-            </a>
-          </div>
-        )}
-
         {/* Generic error */}
         {error && (
           <div className="mt-3 p-2.5 bg-red-50 border border-red-100 rounded-lg">
@@ -132,7 +113,7 @@ export default function SaveModelModal({ criteria, runId, onClose, onSaved }: Sa
           </button>
           <button
             onClick={handleSave}
-            disabled={!name.trim() || saving || !!limitReached}
+            disabled={!name.trim() || saving}
             className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-1.5 rounded-lg transition-colors"
           >
             {saving ? 'Saving...' : 'Save model'}
