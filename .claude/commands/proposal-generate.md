@@ -1,0 +1,1 @@
+../../.aott/.claude/commands/proposal-generate.md

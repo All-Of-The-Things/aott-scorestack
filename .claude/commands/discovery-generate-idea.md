@@ -1,0 +1,1 @@
+../../.aott/.claude/commands/discovery-generate-idea.md

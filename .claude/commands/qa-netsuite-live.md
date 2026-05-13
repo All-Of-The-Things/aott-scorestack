@@ -1,0 +1,1 @@
+../../.aott/.claude/commands/qa-netsuite-live.md
