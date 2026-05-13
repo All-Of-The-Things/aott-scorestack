@@ -1,0 +1,3 @@
+[submodule ".aott"]
+	path = .aott
+	url = https://github.com/All-Of-The-Things/ai-project-starter

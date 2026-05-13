@@ -1,0 +1,1 @@
+../../.aott/.claude/commands/plan-architecture.md
