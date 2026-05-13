@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import type { CriterionScore } from '@/app/lib/scoring'
 import UpgradeModal from '@/app/components/UpgradeModal'
+import { FIELD_ALLOWED_VALUES } from '@/app/lib/fields'
 
 // ---------------------------------------------------------------------------
 // Shared types — exported so the parent Server Component can import them
@@ -35,6 +36,7 @@ const FIELD_LABELS: Record<string, string> = {
   company_name: 'Company',
   industry: 'Industry',
   company_size: 'Company Size',
+  employee_count: 'Employees',
   location: 'Location',
 }
 
@@ -44,6 +46,7 @@ const PROFILE_FIELDS = [
   'company_name',
   'industry',
   'company_size',
+  'employee_count',
   'location',
 ] as const
 
@@ -115,7 +118,13 @@ function EnrichedProfile({ data }: { data: Record<string, unknown> | null }) {
         {fields.map((f) => (
           <div key={f} className="flex flex-col">
             <span className="text-[10px] text-gray-400">{FIELD_LABELS[f]}</span>
-            <span className="text-xs text-gray-700 font-medium truncate">{String(data[f])}</span>
+            {FIELD_ALLOWED_VALUES[f] ? (
+              <span className="inline-flex self-start mt-0.5 text-[11px] font-medium px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700">
+                {String(data[f])}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-700 font-medium truncate">{String(data[f])}</span>
+            )}
           </div>
         ))}
       </div>

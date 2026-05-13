@@ -155,6 +155,7 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
         company_name: p.currentCompany ?? null,
         industry: null,
         company_size: null,
+        employee_count: null,
         location: p.geoLocation?.fullLocation ?? null,
       }
 

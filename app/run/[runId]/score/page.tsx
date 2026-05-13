@@ -18,6 +18,8 @@ const SCOREABLE_FIELDS: Record<string, string> = {
   location: 'Location',
 }
 
+const ENRICHMENT_PREVIEW_ROWS = 5
+
 function deriveAvailableFields(enrichedRows: { enrichedData: unknown }[]): string[] {
   const found = new Set<string>()
   for (const row of enrichedRows) {
@@ -118,6 +120,17 @@ export default async function ScorePage({ params }: ScorePageProps) {
   })
 
   const availableFields = deriveAvailableFields(enrichedRows)
+
+  const enrichmentPreview = enrichedRows
+    .slice(0, ENRICHMENT_PREVIEW_ROWS)
+    .map((row) => {
+      if (!row.enrichedData || typeof row.enrichedData !== 'object') return null
+      const data = row.enrichedData as Record<string, unknown>
+      return Object.fromEntries(
+        Object.keys(SCOREABLE_FIELDS).map((field) => [field, (data[field] as string | null) ?? null])
+      ) as Record<string, string | null>
+    })
+    .filter((r): r is Record<string, string | null> => r !== null)
 
   const enrichRate =
     run.totalContacts > 0
@@ -247,6 +260,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
                   ?? (run.aiSuggestedCriteria as Criterion[] | null)
                   ?? []
                 }
+                enrichmentPreview={enrichmentPreview}
               />
             </section>
 

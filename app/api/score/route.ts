@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { revalidatePath } from 'next/cache'
 import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
 import { EnrichmentStatus, RunStatus } from '@/app/generated/prisma'
@@ -148,6 +149,10 @@ export async function POST(request: NextRequest) {
       modelId: model_id ?? null,
     },
   })
+
+  // Bust Next.js router cache so both pages re-fetch after re-scoring.
+  revalidatePath(`/run/${run_id}/score`)
+  revalidatePath(`/run/${run_id}/results`)
 
   // Sort: total_score DESC, row_index ASC for ties
   const sorted = scored.sort((a, b) => {
