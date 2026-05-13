@@ -3,19 +3,18 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const BASE_TABS = [
+const TABS = [
   { href: '/settings/billing', label: 'Billing' },
   { href: '/settings/integrations', label: 'Integrations' },
+  { href: '/settings/team', label: 'Team' },
 ]
-const TEAM_TAB = { href: '/settings/team', label: 'Team' }
 
-export default function SettingsNav({ showTeam = false }: { showTeam?: boolean }) {
+export default function SettingsNav() {
   const pathname = usePathname()
-  const tabs = showTeam ? [...BASE_TABS, TEAM_TAB] : BASE_TABS
 
   return (
     <div className="flex gap-1 border-b border-gray-200 mb-6">
-      {tabs.map(({ href, label }) => {
+      {TABS.map(({ href, label }) => {
         const active = pathname === href || pathname.startsWith(href + '/')
         return (
           <Link

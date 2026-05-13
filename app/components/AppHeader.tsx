@@ -9,6 +9,8 @@ interface AppHeaderProps {
   userEmail?: string | null
   modelName?: string | null
   plan?: string | null
+  orgName?: string | null
+  role?: string | null
 }
 
 const PLAN_LABEL: Record<string, string> = {
@@ -24,10 +26,10 @@ const PLAN_BADGE: Record<string, string> = {
 
 const NAV_LINKS = [
   { href: '/runs', label: 'Enrichments' },
-  { href: '/delivery', label: 'Delivery', proOnly: true },
+  { href: '/delivery', label: 'Deliveries' },
 ]
 
-export default function AppHeader({ userEmail, modelName, plan }: AppHeaderProps) {
+export default function AppHeader({ userEmail, modelName, plan, orgName, role }: AppHeaderProps) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const pathname = usePathname()
@@ -61,7 +63,7 @@ export default function AppHeader({ userEmail, modelName, plan }: AppHeaderProps
 
           {userEmail && (
             <div className="hidden sm:flex items-center gap-0.5 ml-1 shrink-0">
-              {NAV_LINKS.filter((link) => !link.proOnly || plan === 'pro' || plan === 'enterprise').map((link) => {
+              {NAV_LINKS.map((link) => {
                 const isActive = pathname === link.href || pathname.startsWith(link.href + '/')
                 return (
                   <Link
@@ -127,9 +129,15 @@ export default function AppHeader({ userEmail, modelName, plan }: AppHeaderProps
                         {planLabel}
                       </span>
                     )}
+                    {role === 'member' && orgName && (
+                      <p className="text-[10px] text-gray-400 mt-1.5 truncate">
+                        Member of <span className="font-medium text-gray-500">{orgName}</span>
+                      </p>
+                    )}
                   </div>
 
-                  {/* Settings */}
+                  {/* Settings — admin only */}
+                  {role !== 'member' && (
                   <Link
                     href="/settings/billing"
                     onClick={() => setOpen(false)}
@@ -141,6 +149,7 @@ export default function AppHeader({ userEmail, modelName, plan }: AppHeaderProps
                     </svg>
                     Settings
                   </Link>
+                  )}
 
                   {/* Sign out */}
                   <div className="border-t border-gray-100">

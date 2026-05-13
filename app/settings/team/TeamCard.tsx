@@ -39,6 +39,7 @@ export default function TeamCard({
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member')
   const [sending, setSending] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const seatsUsed = members.length
@@ -60,6 +61,8 @@ export default function TeamCard({
           setError(`Member limit reached (${data.limit} maximum).`)
         } else if (data.error === 'already_member') {
           setError('This person is already a member of your workspace.')
+        } else if (data.error === 'already_invited') {
+          setError('An invite has already been sent to this address.')
         } else {
           setError(data.error ?? 'Failed to send invite')
         }
@@ -82,6 +85,16 @@ export default function TeamCard({
       router.refresh()
     } finally {
       setRemoving(null)
+    }
+  }
+
+  async function handleCancelInvite(inviteId: string) {
+    setCancelling(inviteId)
+    try {
+      await fetch(`/api/org/invite/${inviteId}`, { method: 'DELETE' })
+      router.refresh()
+    } finally {
+      setCancelling(null)
     }
   }
 
@@ -144,6 +157,15 @@ export default function TeamCard({
                     <span className="text-xs text-gray-400">
                       Sent {new Date(inv.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleCancelInvite(inv.id)}
+                        disabled={cancelling === inv.id}
+                        className="text-xs text-red-500 hover:text-red-700 transition-colors disabled:opacity-40"
+                      >
+                        {cancelling === inv.id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

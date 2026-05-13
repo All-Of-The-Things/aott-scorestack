@@ -22,7 +22,7 @@ interface DeliveryMessage {
   editedBody: string | null
   deliveryStatus: string
   sentAt: string | null
-  runResult: { linkedinUrl: string; rowIndex: number }
+  runResult: { linkedinUrl: string; rowIndex: number; enrichedData: Record<string, unknown> | null }
 }
 
 interface Props {
@@ -56,6 +56,18 @@ function contactHandle(url: string) {
   return url.replace(/https?:\/\/(www\.)?linkedin\.com\/in\/?/, '').replace(/\/$/, '')
 }
 
+function extractContact(enrichedData: Record<string, unknown> | null, linkedinUrl: string) {
+  const fullName  = enrichedData?.full_name as string | null | undefined
+  const firstName = enrichedData?.first_name as string | null | undefined
+  const lastName  = enrichedData?.last_name as string | null | undefined
+  const name =
+    fullName ??
+    (firstName ? `${firstName} ${lastName ?? ''}`.trim() : null) ??
+    null
+  const headline = (enrichedData?.headline as string | null | undefined) ?? null
+  return { name: name ?? contactHandle(linkedinUrl), headline }
+}
+
 // ── Per-message status dot ───────────────────────────────────────────────────
 
 function StatusDot({ status, isCurrent }: { status: string; isCurrent: boolean }) {
@@ -82,6 +94,80 @@ function StatusDot({ status, isCurrent }: { status: string; isCurrent: boolean }
     )
   }
   return <span className="w-2 h-2 rounded-full bg-gray-200 shrink-0 mt-0.5" />
+}
+
+// ── Per-message row ──────────────────────────────────────────────────────────
+
+const CLAMP_THRESHOLD = 160
+
+function MessageRow({
+  msg, isCurrent, jobStatus, onRetry, retrying,
+}: {
+  msg: DeliveryMessage
+  isCurrent: boolean
+  jobStatus: string
+  onRetry: (id: string) => void
+  retrying: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const text = msg.editedBody ?? msg.body
+  const { name, headline } = extractContact(msg.runResult.enrichedData, msg.runResult.linkedinUrl)
+  const isLong = text.length > CLAMP_THRESHOLD
+
+  return (
+    <div className={`px-4 py-3 flex items-start gap-3 transition-colors ${isCurrent ? 'bg-blue-50/60' : ''}`}>
+      <div className="mt-1 flex items-center justify-center w-4">
+        <StatusDot status={msg.deliveryStatus} isCurrent={isCurrent} />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <a
+            href={msg.runResult.linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-gray-800 hover:text-blue-600 hover:underline truncate"
+          >
+            {name}
+          </a>
+          {isCurrent && (
+            <span className="text-[10px] font-medium text-blue-600">Sending…</span>
+          )}
+          {msg.deliveryStatus === 'failed' && (
+            <>
+              <span className="text-[10px] font-medium text-red-500">Failed</span>
+              {jobStatus !== 'running' && (
+                <button
+                  onClick={() => onRetry(msg.id)}
+                  disabled={retrying}
+                  className="text-[10px] font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 transition-colors"
+                >
+                  {retrying ? 'Retrying…' : 'Retry'}
+                </button>
+              )}
+            </>
+          )}
+          {msg.deliveryStatus === 'sent' && msg.sentAt && (
+            <span className="text-[10px] text-gray-400">
+              {new Date(msg.sentAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+        </div>
+        {headline && (
+          <p className="text-[11px] text-gray-400 truncate mb-0.5">{headline}</p>
+        )}
+        <p className={`text-[11px] text-gray-500 leading-relaxed ${expanded ? '' : 'line-clamp-2'}`}>{text}</p>
+        {isLong && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-0.5 text-[10px] font-medium text-blue-500 hover:text-blue-700 transition-colors"
+          >
+            {expanded ? 'See less' : 'See more'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // ── Live message list for a single job ──────────────────────────────────────
@@ -157,58 +243,16 @@ function JobMessageList({ jobId, jobStatus }: { jobId: string; jobStatus: string
 
   return (
     <div className="divide-y divide-gray-50">
-      {messages.map((msg, i) => {
-        const isCurrent = i === firstPendingIdx
-        const text = msg.editedBody ?? msg.body
-        const handle = contactHandle(msg.runResult.linkedinUrl)
-
-        return (
-          <div
-            key={msg.id}
-            className={`px-4 py-3 flex items-start gap-3 transition-colors ${isCurrent ? 'bg-blue-50/60' : ''}`}
-          >
-            <div className="mt-1 flex items-center justify-center w-4">
-              <StatusDot status={msg.deliveryStatus} isCurrent={isCurrent} />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <a
-                  href={msg.runResult.linkedinUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-medium text-blue-600 hover:underline truncate"
-                >
-                  {handle}
-                </a>
-                {isCurrent && (
-                  <span className="text-[10px] font-medium text-blue-600">Sending…</span>
-                )}
-                {msg.deliveryStatus === 'failed' && (
-                  <>
-                    <span className="text-[10px] font-medium text-red-500">Failed</span>
-                    {jobStatus !== 'running' && (
-                      <button
-                        onClick={() => handleRetry(msg.id)}
-                        disabled={retryingId === msg.id}
-                        className="text-[10px] font-medium text-blue-600 hover:text-blue-800 disabled:text-gray-400 transition-colors"
-                      >
-                        {retryingId === msg.id ? 'Retrying…' : 'Retry'}
-                      </button>
-                    )}
-                  </>
-                )}
-                {msg.deliveryStatus === 'sent' && msg.sentAt && (
-                  <span className="text-[10px] text-gray-400">
-                    {new Date(msg.sentAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">{text}</p>
-            </div>
-          </div>
-        )
-      })}
+      {messages.map((msg, i) => (
+        <MessageRow
+          key={msg.id}
+          msg={msg}
+          isCurrent={i === firstPendingIdx}
+          jobStatus={jobStatus}
+          onRetry={handleRetry}
+          retrying={retryingId === msg.id}
+        />
+      ))}
     </div>
   )
 }

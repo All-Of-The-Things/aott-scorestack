@@ -118,18 +118,24 @@ export async function sendOrgInvite(
     subject: `You've been invited to join ${orgName} on ScoreStack`,
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#111;">
-        <h2 style="font-size:18px;font-weight:600;margin:0 0 8px;">You're invited</h2>
+        <h2 style="font-size:18px;font-weight:600;margin:0 0 8px;">You're invited to ScoreStack</h2>
         <p style="font-size:14px;color:#555;margin:0 0 24px;">
-          <strong>${orgName}</strong> has invited you to join their ScoreStack workspace.
-          Click below to sign in and accept the invitation.
+          <strong>${orgName}</strong> has invited you to join their workspace.
+          Click the button below — you'll be asked to enter this email address to receive a sign-in link.
         </p>
         <a href="${signInUrl}"
           style="display:inline-block;background:#2563eb;color:#fff;font-size:14px;font-weight:500;text-decoration:none;padding:10px 20px;border-radius:8px;">
-          Accept invite →
+          Accept invitation →
         </a>
-        <p style="font-size:11px;color:#aaa;margin-top:24px;">
-          We'll send a magic link to this address. No password needed. This invitation expires in 7 days.
-        </p>
+        <div style="margin-top:24px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+          <p style="font-size:12px;color:#6b7280;margin:0 0 4px;font-weight:600;">How it works</p>
+          <ol style="font-size:12px;color:#6b7280;margin:0;padding-left:16px;line-height:1.6;">
+            <li>Click the button above</li>
+            <li>Enter <strong style="color:#374151;">${email}</strong> on the sign-in page</li>
+            <li>Check your inbox for a magic link — click it to access the workspace</li>
+          </ol>
+        </div>
+        <p style="font-size:11px;color:#aaa;margin-top:16px;">This invitation expires in 7 days.</p>
       </div>
     `,
   })

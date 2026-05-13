@@ -54,6 +54,7 @@ function StatusBadge({ status }: { status: string }) {
 export default async function BillingPage() {
   const session = await auth()
   if (!session) redirect('/auth/signin?callbackUrl=/settings/billing')
+  if (session.user.role !== 'admin') redirect('/runs')
 
   let orgId = session.user.orgId
   if (!orgId) {
@@ -101,7 +102,7 @@ export default async function BillingPage() {
       />
 
       <main className="max-w-2xl mx-auto px-4 py-10">
-        <SettingsNav showTeam={process.env.TEAMS_ENABLED === 'true'} />
+        <SettingsNav />
 
         <div className="space-y-6">
 

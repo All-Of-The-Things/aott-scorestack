@@ -13,6 +13,7 @@ declare module "next-auth" {
       email?: string | null;
       image?: string | null;
       orgId: string | null;
+      orgName: string | null;
       role: UserRole;
       plan: Plan;
     };
@@ -43,41 +44,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // Attach custom user fields to the session so they're available
     // client-side via useSession() and server-side via auth().
     async session({ session, user }) {
-      // Re-read from DB rather than trusting the adapter's snapshot. The signIn
-      // callback that bootstraps the org runs after the adapter reads the user,
-      // so the snapshot's orgId is null on first sign-in.
-      let orgId: string | null = null;
+      let orgId:   string | null = null;
+      let orgName: string | null = null;
       let role: UserRole = "member";
       let plan: Plan = "free";
       try {
         const dbUser = await prisma.user.findUnique({
           where:  { id: user.id },
-          select: { orgId: true, role: true, org: { select: { plan: true } } },
+          select: { orgId: true, role: true, org: { select: { plan: true, name: true } } },
         });
-
-        // Fallback org bootstrap — covers cases where the signIn callback was
-        // skipped (e.g. user.id undefined during email verification request).
-        if (dbUser && !dbUser.orgId) {
-          const org = await prisma.organization.create({
-            data: { name: "My Workspace", plan: "free" as Plan },
-          });
-          await prisma.user.update({
-            where:  { id: user.id },
-            data:   { orgId: org.id, role: "admin" as UserRole },
-          });
-          orgId = org.id;
-          role  = "admin";
-        } else {
-          orgId = dbUser?.orgId ?? null;
-          role  = (dbUser?.role  ?? "member") as UserRole;
-          plan  = (dbUser?.org?.plan ?? "free") as Plan;
-        }
+        orgId   = dbUser?.orgId          ?? null;
+        role    = (dbUser?.role          ?? "member") as UserRole;
+        plan    = (dbUser?.org?.plan     ?? "free")   as Plan;
+        orgName = dbUser?.org?.name      ?? null;
       } catch (err) {
         console.error("[auth] session callback DB read failed (non-fatal):", err);
       }
       return {
         ...session,
-        user: { ...session.user, id: user.id, orgId, role, plan },
+        user: { ...session.user, id: user.id, orgId, orgName, role, plan },
       };
     },
 
@@ -101,14 +86,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             where: { email: user.email.toLowerCase(), expires: { gte: new Date() } },
           });
           if (invite) {
-            if (!orgId) {
+            // Allow switching org if user is solo in their current org (or has none).
+            // Prevents luring someone out of a shared team, but fixes new users who
+            // got a solo org bootstrapped before/during a previous invite attempt.
+            let canSwitch = !orgId;
+            if (orgId && orgId !== invite.orgId) {
+              const soloCount = await prisma.user.count({ where: { orgId } });
+              canSwitch = soloCount <= 1;
+            }
+            if (canSwitch) {
+              const prevOrgId = orgId;
               await prisma.user.update({
                 where: { id: user.id },
                 data: { orgId: invite.orgId, role: invite.role },
               });
               orgId = invite.orgId;
+              // Clean up the now-empty solo org so it doesn't linger.
+              if (prevOrgId) {
+                prisma.organization.deleteMany({ where: { id: prevOrgId } }).catch(() => {
+                  // Non-fatal — org may have related records, leave it in place.
+                });
+              }
             }
-            // Delete invite regardless — if user already had an org, existing org wins.
             await prisma.orgInvite.delete({ where: { id: invite.id } });
           }
         }

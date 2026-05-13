@@ -63,6 +63,8 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
+          orgName={session.user.orgName}
+          role={session.user.role}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
@@ -81,6 +83,8 @@ export default async function ScorePage({ params }: ScorePageProps) {
         <AppHeader
           userEmail={session.user.email}
           plan={session.user.plan}
+          orgName={session.user.orgName}
+          role={session.user.role}
         />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
@@ -237,6 +241,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
               <CriteriaBuilder
                 runId={runId}
                 availableFields={availableFields}
+                plan={session.user.plan}
                 initialCriteria={
                   (run.scoringCriteria as Criterion[] | null)
                   ?? (run.aiSuggestedCriteria as Criterion[] | null)

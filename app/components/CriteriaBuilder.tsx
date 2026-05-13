@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { Criterion, MatchType } from '@/app/lib/scoring'
+import type { Plan } from '@/app/generated/prisma'
+import UpgradeModal from '@/app/components/UpgradeModal'
 
 // ---------------------------------------------------------------------------
 // CriteriaBuilder — client component
@@ -28,6 +30,7 @@ interface CriteriaBuilderProps {
   runId: string
   availableFields: string[]
   initialCriteria?: Criterion[]
+  plan: Plan
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -56,7 +59,7 @@ function emptyCriterion(field: string): Criterion {
   }
 }
 
-export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [] }: CriteriaBuilderProps) {
+export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [], plan }: CriteriaBuilderProps) {
   const router = useRouter()
   const [criteria, setCriteria] = useState<Criterion[]>(initialCriteria)
   // Raw text for each criterion's values input — decoupled from parsed match_values
@@ -69,6 +72,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
   const [confirmingScore, setConfirmingScore] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [scoreError, setScoreError] = useState<string | null>(null)
+  const [upgradeRequiredPlan, setUpgradeRequiredPlan] = useState<'starter' | 'pro' | null>(null)
 
   // ---------------------------------------------------------------------------
   // AI suggest
@@ -84,6 +88,10 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
       })
       const data = await res.json()
       if (!res.ok) {
+        if (res.status === 403 && data.error === 'plan_required') {
+          setUpgradeRequiredPlan(data.requiredPlan ?? 'starter')
+          return
+        }
         setSuggestError(data.error ?? 'Suggestion failed')
         return
       }
@@ -192,6 +200,15 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
   // ---------------------------------------------------------------------------
   return (
     <>
+    {upgradeRequiredPlan && (
+      <UpgradeModal
+        trigger="AI criteria suggestions"
+        requiredPlan={upgradeRequiredPlan}
+        isOpen
+        onClose={() => setUpgradeRequiredPlan(null)}
+        currentPlan={plan}
+      />
+    )}
     {/* No-data warning modal */}
     {confirmingScore && (
       <div
@@ -261,7 +278,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
           </p>
         </div>
         <button
-          onClick={handleSuggest}
+          onClick={plan === 'free' ? () => setUpgradeRequiredPlan('starter') : handleSuggest}
           disabled={suggesting}
           className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
         >

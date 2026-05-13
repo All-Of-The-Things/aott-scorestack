@@ -32,7 +32,7 @@ export default async function IntegrationsPage() {
       />
 
       <main className="max-w-2xl mx-auto px-4 py-10">
-        <SettingsNav showTeam={process.env.TEAMS_ENABLED === 'true'} />
+        <SettingsNav />
 
         <div className="space-y-6">
           <div>

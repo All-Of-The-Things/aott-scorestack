@@ -15,7 +15,10 @@ export async function GET() {
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const orgId = session.user?.orgId
+  const plan = session.user.plan
+  if (plan === 'free') return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
+
+  const orgId = session.user.orgId
   if (!orgId) return NextResponse.json({ templates: [] })
 
   const templates = await prisma.messageTemplate.findMany({
@@ -30,12 +33,12 @@ export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const plan = (session.user?.plan ?? 'free') as string
+  const plan = session.user.plan
   if (plan === 'free') {
     return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
   }
 
-  const orgId = session.user?.orgId
+  const orgId = session.user.orgId
   if (!orgId) return NextResponse.json({ error: 'No organization found' }, { status: 503 })
 
   const body = await req.json()

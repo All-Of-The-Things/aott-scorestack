@@ -58,11 +58,12 @@ export default function EnrichPage() {
 
     if (notifyEmail && status !== 'authenticated') {
       try {
-        document.cookie = `auth_next=${encodeURIComponent(`/run/${runId}/score`)}; path=/; max-age=600; SameSite=Lax`
+        const dest = `/run/${runId}/score`
+        document.cookie = `auth_next=${encodeURIComponent(dest)}; path=/; max-age=600; SameSite=Lax`
         const result = await signIn('resend', {
           email:       notifyEmail,
           redirect:    false,
-          callbackUrl: '/auth/confirmed',
+          callbackUrl: `/auth/confirmed?next=${encodeURIComponent(dest)}`,
         })
         if (!result?.error) {
           setStage('link-sent')
@@ -119,7 +120,7 @@ export default function EnrichPage() {
   if (stage === 'choose' && confirmed) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
+        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
         <div className="flex items-center justify-center px-4 py-16">
           <div className="w-full max-w-lg">
             <EnrichmentChoice
@@ -138,7 +139,7 @@ export default function EnrichPage() {
   if (stage === 'enriching' && confirmed) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
+        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
         <div className="flex items-center justify-center px-4 py-16">
           <div className="w-full max-w-md">
             <EnrichmentProgress

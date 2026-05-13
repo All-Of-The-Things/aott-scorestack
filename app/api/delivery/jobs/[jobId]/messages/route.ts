@@ -9,6 +9,11 @@ export async function GET(
   const session = await auth()
   if (!session?.user?.orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const { plan } = session.user
+  if (plan !== 'pro' && plan !== 'enterprise') {
+    return NextResponse.json({ error: 'plan_required', requiredPlan: 'pro' }, { status: 403 })
+  }
+
   const { jobId } = await params
 
   const job = await prisma.deliveryJob.findUnique({
@@ -29,7 +34,7 @@ export async function GET(
       deliveryStatus: true,
       sentAt: true,
       runResult: {
-        select: { linkedinUrl: true, rowIndex: true },
+        select: { linkedinUrl: true, rowIndex: true, enrichedData: true },
       },
     },
     orderBy: { runResult: { rowIndex: 'asc' } },
