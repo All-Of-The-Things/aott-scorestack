@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
 import AppHeader from '@/app/components/AppHeader'
+import UsageBanner from '@/app/components/UsageBanner'
 
 const STATUS_CONFIG: Record<string, { label: string; dot: string; text: string }> = {
   complete:  { label: 'Complete',  dot: 'bg-green-500',  text: 'text-green-700 bg-green-50 border-green-100' },
@@ -62,6 +63,7 @@ export default async function RunsPage() {
         role={session.user.role}
       />
 
+      <UsageBanner />
       <main className="bg-gray-50 min-h-screen">
         <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
           <div className="flex items-center justify-between mb-6">

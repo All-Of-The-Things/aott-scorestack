@@ -7,6 +7,7 @@ import type { CriterionScore, Criterion } from '@/app/lib/scoring'
 import SaveModelButton from '@/app/components/SaveModelButton'
 import ExportButton from '@/app/components/ExportButton'
 import AppHeader from '@/app/components/AppHeader'
+import UsageBanner from '@/app/components/UsageBanner'
 import Breadcrumb from '@/app/components/Breadcrumb'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
 import ResultsTabBar from '@/app/components/ResultsTabBar'
@@ -115,6 +116,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
     return (
       <>
         <AppHeader userEmail={session.user.email} plan={session.user.plan} />
+        <UsageBanner />
         <main className="bg-gray-50">
           <div className="flex items-center justify-center px-4 py-24 text-center">
             <div>
@@ -189,6 +191,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
         orgName={session.user.orgName}
         role={session.user.role}
       />
+      <UsageBanner />
 
       <main className="bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">

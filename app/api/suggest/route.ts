@@ -50,9 +50,13 @@ export async function POST(request: NextRequest) {
 
   const { run_id } = body
 
-  // Verify run exists
+  // Verify run exists and belongs to this org
   const run = await prisma.run.findUnique({ where: { id: run_id } })
   if (!run) {
+    return NextResponse.json({ error: `Run not found: ${run_id}` }, { status: 404 })
+  }
+  const orgId = session.user.orgId
+  if (run.orgId && (orgId === null || run.orgId !== orgId)) {
     return NextResponse.json({ error: `Run not found: ${run_id}` }, { status: 404 })
   }
 

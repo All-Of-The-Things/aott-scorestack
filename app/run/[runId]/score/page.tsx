@@ -4,6 +4,7 @@ import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
 import CriteriaBuilder from '@/app/components/CriteriaBuilder'
 import AppHeader from '@/app/components/AppHeader'
+import UsageBanner from '@/app/components/UsageBanner'
 import WorkflowStepper from '@/app/components/WorkflowStepper'
 import EnrichingWait from '@/app/components/EnrichingWait'
 import Breadcrumb from '@/app/components/Breadcrumb'
@@ -68,6 +69,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
           orgName={session.user.orgName}
           role={session.user.role}
         />
+        <UsageBanner />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
             <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: '/runs' }, { label: 'Define criteria' }]} />
@@ -88,6 +90,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
           orgName={session.user.orgName}
           role={session.user.role}
         />
+        <UsageBanner />
         <main className="bg-gray-50">
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
             <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: '/runs' }, { label: 'Define criteria' }]} />
@@ -147,6 +150,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
         userEmail={session.user.email}
         plan={session.user.plan}
       />
+      <UsageBanner />
 
       <main className="bg-gray-50">
         <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
