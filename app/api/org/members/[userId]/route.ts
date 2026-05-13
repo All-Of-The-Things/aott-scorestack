@@ -3,16 +3,15 @@ import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
 
 export async function DELETE(_req: Request, { params }: { params: { userId: string } }) {
-  if (process.env.TEAMS_ENABLED !== 'true') {
-    return NextResponse.json({ error: 'feature_disabled' }, { status: 404 })
-  }
-
   const session = await auth()
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
 
-  const { orgId, role, id: sessionUserId } = session.user
+  const { orgId, role, plan, id: sessionUserId } = session.user
   if (!orgId) return NextResponse.json({ error: 'account_setup_incomplete' }, { status: 503 })
   if (role !== 'admin') return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+  const isPro = plan === 'pro' || plan === 'enterprise'
+  if (!isPro) return NextResponse.json({ error: 'plan_required', requiredPlan: 'pro' }, { status: 403 })
 
   const { userId } = params
 

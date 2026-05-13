@@ -241,6 +241,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
               <CriteriaBuilder
                 runId={runId}
                 availableFields={availableFields}
+                plan={session.user.plan}
                 initialCriteria={
                   (run.scoringCriteria as Criterion[] | null)
                   ?? (run.aiSuggestedCriteria as Criterion[] | null)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { auth } from '@/app/lib/auth'
 import { EnrichmentStatus } from '@/app/generated/prisma/client'
 import prisma from '@/app/lib/prisma'
 import { suggestCriteria, type EnrichedSample } from '@/app/lib/suggestions'
@@ -32,6 +33,12 @@ const SuggestBodySchema = z.object({
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
+  const session = await auth()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const plan = session.user.plan
+  if (plan === 'free') return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
+
   let body: z.infer<typeof SuggestBodySchema>
   try {
     const raw = await request.json()

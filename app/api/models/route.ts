@@ -35,11 +35,9 @@ const CreateModelSchema = z.object({
 
 export async function GET() {
   const session = await auth()
-  const userId = session?.user?.id ?? null
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  if (!userId) {
-    return NextResponse.json({ models: [] }, { status: 200 })
-  }
+  const userId = session.user.id
 
   const models = await prisma.scoringModel.findMany({
     where: { userId },

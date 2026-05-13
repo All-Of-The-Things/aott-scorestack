@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { auth } from '@/app/lib/auth'
 import prisma from '@/app/lib/prisma'
 import { EnrichmentStatus, RunStatus } from '@/app/generated/prisma'
 import { computeScores, type Criterion } from '@/app/lib/scoring'
@@ -50,6 +51,9 @@ const ScoreBodySchema = z
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
+  const session = await auth()
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   let body: z.infer<typeof ScoreBodySchema>
   try {
     const raw = await request.json()
