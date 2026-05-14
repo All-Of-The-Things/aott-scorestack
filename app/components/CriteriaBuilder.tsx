@@ -200,6 +200,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
         return
       }
       router.push(`/run/${runId}/results`)
+      router.refresh()
     } catch {
       setScoreError('Network error — please try again')
     } finally {

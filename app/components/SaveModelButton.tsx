@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSession, signIn } from 'next-auth/react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import type { Criterion } from '@/app//lib/scoring'
 import SaveModelModal from '@/app/components/SaveModelModal'
 import UpgradeModal from '@/app/components/UpgradeModal'
@@ -23,6 +23,7 @@ interface SaveModelButtonProps {
 export default function SaveModelButton({ criteria, savedModelName, runId, knownEmail }: SaveModelButtonProps) {
   const { status, data: session } = useSession()
   const pathname = usePathname()
+  const router = useRouter()
   const [showModal, setShowModal] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [modelName, setModelName] = useState<string | null>(savedModelName)
@@ -33,6 +34,7 @@ export default function SaveModelButton({ criteria, savedModelName, runId, known
   const handleSaved = (_modelId: string, name: string) => {
     setShowModal(false)
     setModelName(name)
+    router.refresh()
   }
 
   const handleSendLink = async () => {
