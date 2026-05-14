@@ -88,14 +88,15 @@ prisma.user.findUnique({
 
 Results page always has a session by design. `SaveModelButton` only renders in authenticated state:
 - **Authenticated**: "Save as model" → opens `SaveModelModal`
-- **Authenticated, model limit hit**: `SaveModelModal` shows inline 409 upgrade prompt
+- **Authenticated, model limit hit**: `SaveModelModal` fires `onLimitReached` callback on 409 → `SaveModelButton` closes the modal and opens `UpgradeModal`
 
 ### Model limit enforcement (`POST /api/models`)
 
 1. Read session via `auth()`. Extract `userId = session?.user?.id ?? null`
 2. If `userId` present: call `getPlanLimitsFor(plan)` from `app/lib/quota.ts` to get `modelLimit`
 3. Count `prisma.scoringModel.count({ where: { userId } })` — if at limit → return 409 `{ error: 'model_limit_reached', limit, plan }`
-4. `SaveModelModal` renders inline upgrade prompt on 409; generic error state on all other failures
+4. On 409: `SaveModelModal` fires `onLimitReached?.()` + `onClose()`; `SaveModelButton` opens `UpgradeModal`; generic error state on all other failures
+5. Deduplication: before creating a new model, `findFirst({ where: { userId, name } })` — if a model with the same name exists for this user, reuse it (200) and link the run without creating a duplicate; `revalidatePath` fires in both the reuse and create paths
 
 ### Enrichment rules
 
@@ -215,39 +216,35 @@ Both surfaces derive cap state from **persisted DB data**:
 
 ## 2a. BYOK Credential Management
 
+BYOK is for **delivery only** (ConnectSafely). Enrichment always uses platform credentials (see §2).
+
 ### Storing credentials
 
 ```
-POST /api/settings/integrations/linkedapi { token, idToken }
+POST /api/org/integrations { connectSafelyApiKey }
   │
-  ├── Encrypt token with AES-256-GCM using ENCRYPTION_KEY env var
-  ├── Encrypt idToken with AES-256-GCM using ENCRYPTION_KEY env var
-  ├── Upsert OrgIntegration { orgId, linkedApiToken: encrypted, linkedApiIdToken: encrypted }
+  ├── Encrypt key with AES-256-GCM using ENCRYPTION_KEY env var
+  ├── Upsert OrgIntegration { orgId, connectSafelyApiKey: encrypted }
   │
-  └── Run a test profile fetch to verify credentials:
-        client.fetchPerson.execute({ personUrl: 'https://linkedin.com/in/williamhgates' })
-        On success: set OrgIntegration.verifiedAt = now()
-        On failure: set OrgIntegration.verifiedAt = null, return 422 { error: 'invalid_credentials' }
+  └── Run a test call to ConnectSafely to verify credentials:
+        On success: set OrgIntegration.connectSafelyVerifiedAt = now()
+        On failure: set OrgIntegration.connectSafelyVerifiedAt = null, return 400 { error: 'invalid_credentials' }
 ```
 
-### Using credentials at enrichment time
+### Using credentials at delivery time
 
 ```
-function resolveLinkedApiClient(org) {
-  if (org.integration?.verifiedAt) {
-    // Decrypt and use org's own credentials
-    const token = decrypt(org.integration.linkedApiToken)
-    const idToken = decrypt(org.integration.linkedApiIdToken)
-    return new LinkedApi({ linkedApiToken: token, identificationToken: idToken })
-  }
-  // Fall back to platform credentials (managed_credits path)
-  return getClient() // existing singleton from app/lib/linkedapi.ts
-}
+async function getOrgConnectSafelyKey(orgId): Promise<string | null>
+  → fetches OrgIntegration for org
+  → if connectSafelyApiKey present: decrypt and return
+  → else: return null (signals platform_agent path)
 ```
+
+Delivery uses org key if present (BYOK path, `deliveryIdentity: 'byok'`), otherwise falls back to platform `CONNECT_SAFELY_API_KEY` (`deliveryIdentity: 'platform_agent'`).
 
 ### Security rules
 - Encrypted values are never returned in API responses
-- `GET /api/settings/integrations` returns only `{ configured: boolean, verifiedAt: DateTime | null }`
+- `GET /api/org/integrations` returns only `{ configured: boolean, verifiedAt: DateTime | null, lastError: string | null }`
 - `ENCRYPTION_KEY` is a 32-byte hex string in env vars; rotation requires re-encrypting all stored credentials
 
 ---
@@ -385,19 +382,20 @@ User (per contact):
 
 ## 5a. Delivery Credential Check (BYOK gate)
 
-Before creating a `DeliveryJob`, verify the org has configured their own LinkedAPI account:
+Delivery has two identity modes: **platform_agent** (platform's `CONNECT_SAFELY_API_KEY`) and **BYOK** (org's own key). Both are valid — BYOK is not required to start a job.
 
 ```
 POST /api/delivery/jobs
   │
   ├── 1. Require auth (Pro+ plan)
   │
-  ├── 2. Fetch OrgIntegration for org
-  │       If not found OR verifiedAt is null:
-  │         return 402 { error: 'byok_required', setup_url: '/settings/integrations' }
-  │         UI: "Add your LinkedAPI account in Settings → Integrations to start sending messages"
+  ├── 2. Resolve delivery identity via getOrgConnectSafelyKey(orgId):
+  │       If org key present + verifiedAt set → BYOK path (deliveryIdentity: 'byok')
+  │       Else → platform_agent path (deliveryIdentity: 'platform_agent')
   │
-  └── 3. Use org's decrypted LINKED_API_TOKEN / LINKED_API_ID_TOKEN for all delivery calls
+  └── 3. If connectSafelyLastError is set on OrgIntegration:
+            return 409 { error: 'integration_error', lastError }
+            UI (DeliverySchedulerModal): blocks Send with error banner
 ```
 
 **Note:** This gate is delivery-only. Enrichment always uses platform credentials and never requires OrgIntegration.
@@ -406,33 +404,35 @@ POST /api/delivery/jobs
 
 ## 5. Delivery Automation
 
-### LinkedIn delivery (LinkedAPI)
+### LinkedIn delivery (ConnectSafely)
 
-Uses the org's own LinkedAPI credentials fetched from `OrgIntegration` (BYOK — see §5a).
+ConnectSafely is a REST API accessed via plain `fetch` with `Authorization: Bearer <key>`. There is no SDK.
 
-1. User creates `DeliveryJob` via `POST /api/delivery/jobs { run_id, scheduled_at?, contact_ids? }`.
-2. If `scheduledAt` is null or in the past: begin processing immediately; otherwise queue for the scheduled time.
+1. User creates `DeliveryJob` via `POST /api/delivery/jobs { run_id, contact_ids? }`.
+2. Fire-and-forget: `processDeliveryJob(jobId, notifyEmail)` runs immediately; the API returns `{ job }` without waiting.
 3. Set `DeliveryJob.status = 'running'`, `startedAt = now()`.
 4. For each `GeneratedMessage` linked to the job (serialised, one at a time):
    a. Resolve the `linkedinUrl` from `RunResult` via `runResultId`.
-   b. Call LinkedAPI messaging workflow:
+   b. Call ConnectSafely:
       ```
-      const workflowId = await client.sendMessage.execute({
-        recipientUrl: linkedinUrl,
-        message: generatedMessage.editedBody ?? generatedMessage.body,
+      connectsafely.sendMessage({
+        personUrl: linkedinUrl,
+        text: generatedMessage.editedBody ?? generatedMessage.body,
       })
-      const result = await client.sendMessage.result(workflowId)
       ```
    c. On success: `GeneratedMessage.sentAt = now()`, `deliveryStatus = 'sent'`; increment `DeliveryJob.sentCount`.
-   d. On failure: `deliveryStatus = 'failed'`; increment `DeliveryJob.failedCount`; log error; continue to next contact.
-   e. Wait 3 seconds between each send to respect LinkedIn rate limits (configurable via `DELIVERY_DELAY_MS` env var).
+   d. Auth failure (401/403): abort job, mark remaining messages `failed`, set `OrgIntegration.connectSafelyLastError`, email user.
+   e. Rate limit (429): retry; if exhausted, mark message `failed`, continue batch.
+   f. Other failure: `deliveryStatus = 'failed'`; continue to next contact.
+   g. Wait `DELIVERY_DELAY_MS` (default 3000ms) between each send.
 5. On full completion: `DeliveryJob.status = 'complete'`, `completedAt = now()`.
+6. Call `sendDeliveryComplete(notifyEmail, jobId, sentCount, failedCount)` — non-fatal.
 
 **Notes:**
-- `client.sendMessage` follows the same async workflow pattern as `client.fetchPerson` — confirm the exact method name against the LinkedAPI SDK changelog before implementation
-- If the SDK does not expose a messaging workflow, fall back to the LinkedAPI REST API directly
-- No webhook callbacks from LinkedAPI for delivery status — status is known synchronously from the workflow result
-- Messages must be plain text (LinkedIn does not support HTML in direct messages); max 300 chars for connection request notes, up to 2,000 for InMail
+- `DeliveryJob.deliveryIdentity` records `'byok'` or `'platform_agent'` for reporting
+- `DeliveryJob.failureCode` records `'auth_failed'` or `'account_disconnected'` when a job aborts
+- Messages must be plain text; max 300 chars for connection request notes, up to 2,000 for InMail
+- Only "Send now" is implemented; `scheduledAt` is never written
 
 ---
 
@@ -461,10 +461,10 @@ Uses the org's own LinkedAPI credentials fetched from `OrgIntegration` (BYOK —
 
 1. Admin calls `POST /api/org/invite { email, role }`.
 2. Server checks seat limit.
-3. Server creates a `VerificationToken` (NextAuth table) with `identifier = invite:{orgId}:{email}`.
-4. Send email via Resend: "You've been invited to join {org.name} on Scorestack. Click to accept."
-5. Link: `/api/auth/callback/email?token={token}&callbackUrl=/onboarding/accept-invite`
-6. On sign-in callback: resolve token, set `User.orgId = orgId`, `User.role = invitedRole`.
+3. Server creates an `OrgInvite` row: `{ orgId, email, role, expires: +7 days }`.
+4. Send email via Resend: "You've been invited to join {org.name} on Scorestack. Click to sign in and join."
+5. Link: `/auth/signin?callbackUrl=/` (standard magic-link sign-in).
+6. On `signIn` callback: query `OrgInvite` for a valid (non-expired) row matching `user.email`; if found, set `User.orgId = invite.orgId`, `User.role = invite.role`, delete the invite row.
 
 ---
 
@@ -479,8 +479,8 @@ Lemon Squeezy acts as **Merchant of Record** — they collect payments from cust
 
 | Variable | Purpose |
 |----------|---------|
-| `LEMONSQUEEZY_STARTER_VARIANT_ID` | $29/mo recurring variant ID |
-| `LEMONSQUEEZY_PRO_VARIANT_ID` | $49/mo recurring variant ID |
+| `NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID` | $29/mo recurring variant ID (must be `NEXT_PUBLIC_` — embedded in browser bundle) |
+| `NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID` | $49/mo recurring variant ID (must be `NEXT_PUBLIC_` — embedded in browser bundle) |
 | `LEMONSQUEEZY_CREDITS_PRODUCT_ID` | LS product ID whose variants are credit packs (dynamic) |
 | `ENABLE_CREDITS` | Set to `"true"` to show the credits section; unset hides it |
 

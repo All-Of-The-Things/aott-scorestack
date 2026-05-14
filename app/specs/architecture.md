@@ -73,11 +73,12 @@
 
 ### Session gate model
 
-Upload and enrichment are public. Auth-required pages apply a three-tier gate:
+Upload and enrichment are public. Auth-required pages apply a two-tier gate:
 
 1. **No session** → sign-in redirect (or inline prompt for the results page)
-2. **Session + `orgName === "My Workspace"`** → `WorkspaceNamePrompt` overlay rendered on the current page — no navigation
-3. **Session + named workspace** → page renders normally
+2. **Session** → page renders normally
+
+There is no workspace-naming step. `WorkspaceNamePrompt` has been removed — orgs are bootstrapped automatically on first sign-in with the internal default name "My Workspace", never shown to users.
 
 **Public routes (no session required):**
 - `GET /` — homepage (upload + enrichment choice)
@@ -92,7 +93,7 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 **Auth-required routes (all three gate tiers apply):**
 - `/run/:runId/score` — criteria builder
 - `/run/:runId/results` — ranked contact list (no-session shows inline prompt, not a redirect)
-- `/onboarding` — workspace name setup (no-session redirects to sign-in; named-workspace redirects to `/`)
+- `/onboarding` — stub: always `redirect('/')` (workspace concept removed; kept for backward-compat with existing links)
 - `/settings/*` — account, billing, integrations, team
 - `POST /api/models` — saving a scoring model
 - `GET /api/models` — listing saved models
@@ -102,10 +103,16 @@ Upload and enrichment are public. Auth-required pages apply a three-tier gate:
 - `/api/delivery/*` — delivery jobs
 - `GET /api/runs/:runId/export` — CSV export
 
-**Session shape** — JWT and session callbacks expose `orgName`:
+**Session shape:**
 ```ts
-// JWT callback: token.orgName = org?.name
-// Session callback: session.user.orgName = token.orgName
+session.user = {
+  id:    string
+  email: string | null
+  orgId: string | null
+  role:  'admin' | 'member'
+  plan:  'free' | 'starter' | 'pro' | 'enterprise'
+}
+// orgName is NOT exposed in the session — it is an internal DB label only
 ```
 
 ### Notify-me flow (unauthenticated user)
@@ -226,14 +233,12 @@ Lemon Squeezy is the billing layer for v1 and v2. A migration to a more scalable
 LEMONSQUEEZY_API_KEY=
 LEMONSQUEEZY_WEBHOOK_SECRET=
 LEMONSQUEEZY_STORE_ID=
-LEMONSQUEEZY_STARTER_VARIANT_ID=      # $29/mo subscription variant
-LEMONSQUEEZY_PRO_VARIANT_ID=          # $49/mo subscription variant
+NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID=   # $29/mo subscription variant (NEXT_PUBLIC_ — browser bundle)
+NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID=       # $49/mo subscription variant (NEXT_PUBLIC_ — browser bundle)
+LEMONSQUEEZY_PLANS_PRODUCT_ID=                 # LS product ID for subscription plans
 
-# Credit pack one-time product IDs (Lemon Squeezy product — not variant)
-LEMONSQUEEZY_CREDITS_100_PRODUCT_ID=
-LEMONSQUEEZY_CREDITS_500_PRODUCT_ID=
-LEMONSQUEEZY_CREDITS_1500_PRODUCT_ID=
-LEMONSQUEEZY_CREDITS_5000_PRODUCT_ID=
+# Credit packs — single dynamic product; variants named "N Credits"
+LEMONSQUEEZY_CREDITS_PRODUCT_ID=
 ```
 
 ---
@@ -401,7 +406,7 @@ ENCRYPTION_KEY=   # 32-byte hex string — AES-256-GCM key for BYOK credential s
 - `User.role`: `admin` | `member`
   - `admin`: can invite/remove members, delete any model, manage billing
   - `member`: can create runs, save models, cannot delete others' models, cannot manage billing
-- Invite flow: `POST /api/org/invite` → sends magic-link email with `inviteToken` → on sign-in, token resolves to `orgId`
+- Invite flow: `POST /api/org/invite` → creates `OrgInvite` row → sends magic-link email → on sign-in callback, `OrgInvite` is resolved by email match → `User.orgId` and `User.role` set, invite row deleted
 
 ---
 
@@ -463,7 +468,7 @@ When adding columns to an existing seeded table, include `UPDATE` statements in 
 ## Environment Variables (additions)
 
 ```
-NEXTAUTH_SECRET=                    # random 32-byte secret
+AUTH_SECRET=                        # random 32-byte secret (NextAuth v5 — not NEXTAUTH_SECRET)
 NEXTAUTH_URL=https://app.scorestack.io
 
 RESEND_API_KEY=                     # used for auth magic-links + enrichment notifications only
@@ -472,8 +477,8 @@ RESEND_FROM_EMAIL=noreply@scorestack.io
 LEMONSQUEEZY_API_KEY=
 LEMONSQUEEZY_WEBHOOK_SECRET=
 LEMONSQUEEZY_STORE_ID=
-LEMONSQUEEZY_STARTER_VARIANT_ID=
-LEMONSQUEEZY_PRO_VARIANT_ID=
+NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID=   # NEXT_PUBLIC_ required — embedded in browser bundle for checkout calls
+NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID=       # NEXT_PUBLIC_ required — embedded in browser bundle for checkout calls
 
 CONNECT_SAFELY_API_KEY=             # ConnectSafely REST API key — delivery
 CONNECT_SAFELY_DELIVERY_ENABLED=    # true = route delivery through ConnectSafely (permanent control)
