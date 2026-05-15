@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { PLAN_FEATURES } from '@/app/lib/planConfig'
 
 type PlanTier = 'free' | 'starter' | 'pro' | 'enterprise'
 
@@ -18,15 +19,6 @@ const PLAN_RANK: Record<PlanTier, number> = {
   pro: 2,
   enterprise: 3,
 }
-
-const PLAN_FEATURES = [
-  { label: 'Contacts per run',  free: '50',    starter: 'Unlimited', pro: 'Unlimited' },
-  { label: 'Scoring models',    free: '1',     starter: '5',         pro: 'Unlimited' },
-  { label: 'CSV export',        free: '—',     starter: '✓',         pro: '✓'         },
-  { label: 'AI message gen',    free: '—',     starter: 'Basic',     pro: 'Custom'    },
-  { label: 'LinkedIn delivery', free: '—',     starter: '—',         pro: '✓'         },
-  { label: 'Team seats',        free: '1',     starter: '1',         pro: '3'         },
-]
 
 export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, currentPlan }: Props) {
   const [planData, setPlanData] = useState<{
@@ -173,12 +165,12 @@ export default function UpgradeModal({ trigger, requiredPlan, isOpen, onClose, c
                       <td className={`px-3 py-2 text-center ${
                         requiredPlan === 'starter' ? 'bg-blue-50/50 text-blue-700' : 'text-gray-600'
                       }`}>
-                        {row.starter}
+                        {row.starter === null ? '✓' : row.starter}
                       </td>
                       <td className={`px-3 py-2 text-center ${
                         requiredPlan === 'pro' ? 'bg-purple-50/50 text-purple-700' : 'text-gray-600'
                       }`}>
-                        {row.pro}
+                        {row.pro === null ? '✓' : row.pro}
                       </td>
                     </tr>
                   ))}

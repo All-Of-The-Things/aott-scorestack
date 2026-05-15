@@ -83,6 +83,19 @@ export async function POST(request: NextRequest) {
 
   const limits = await getPlanLimitsFor(orgId ? plan : 'free')
 
+  // Free plan: cap total enrichment runs
+  if (limits.isFree && orgId) {
+    const runCount = await prisma.run.count({
+      where: { orgId, status: { in: ['enriching', 'scoring', 'complete'] } },
+    })
+    if (runCount >= 5) {
+      return new Response(JSON.stringify({ error: 'run_limit_reached' }), {
+        status: 402,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+
   // Set up SSE stream
   const encoder = new TextEncoder()
   const stream = new ReadableStream({

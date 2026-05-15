@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import UpgradeModal from '@/app/components/UpgradeModal'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +25,7 @@ interface EnrichmentProgressProps {
   onComplete: (runId: string) => void
   /** Called with an error message if the stream fails or the server returns an error event. */
   onError: (message: string) => void
+  currentPlan?: string
 }
 
 // Max contacts shown in the rolling log
@@ -64,6 +66,7 @@ export default function EnrichmentProgress({
   notifyEmail,
   onComplete,
   onError,
+  currentPlan,
 }: EnrichmentProgressProps) {
   const [step, setStep] = useState<EnrichStep>('starting')
   const [current, setCurrent] = useState(0)
@@ -81,6 +84,7 @@ export default function EnrichmentProgress({
   const [completedRunId, setCompletedRunId] = useState<string | null>(null)
   const [isQuotaError, setIsQuotaError] = useState(false)
   const [quotaErrorDetails, setQuotaErrorDetails] = useState<{ message: string; balance?: number; needed?: number } | null>(null)
+  const [isRunLimitError, setIsRunLimitError] = useState(false)
 
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -117,6 +121,16 @@ export default function EnrichmentProgress({
       }
 
       if (!res.ok || !res.body) {
+        if (res.status === 402) {
+          try {
+            const data = await res.clone().json()
+            if (data.error === 'run_limit_reached') {
+              setIsRunLimitError(true)
+              setStep('error')
+              return
+            }
+          } catch { /* fall through to generic error */ }
+        }
         const msg = `Enrichment request failed (${res.status})`
         setErrorMessage(msg)
         setStep('error')
@@ -264,6 +278,37 @@ export default function EnrichmentProgress({
   // Error state
   // ---------------------------------------------------------------------------
   if (step === 'error') {
+    if (isRunLimitError) {
+      return (
+        <>
+          <UpgradeModal
+            trigger="You've used all 5 free enrichments"
+            requiredPlan="starter"
+            isOpen
+            onClose={() => onError('run_limit_reached')}
+            currentPlan={(currentPlan ?? 'free') as 'free' | 'starter' | 'pro' | 'enterprise'}
+          />
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 max-w-sm w-full mx-auto text-center">
+            <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
+              <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h2 className="mt-4 text-sm font-semibold text-gray-800">Enrichment limit reached</h2>
+            <p className="mt-1.5 text-xs text-gray-500">
+              Free accounts include up to 5 enrichments. Upgrade to get unlimited enrichments.
+            </p>
+            <button
+              onClick={() => onError('run_limit_reached')}
+              className="mt-5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              ← Start over
+            </button>
+          </div>
+        </>
+      )
+    }
+
     if (isQuotaError && quotaErrorDetails) {
       return (
         <div className="bg-white rounded-2xl shadow-sm border border-orange-200 p-8 max-w-sm w-full mx-auto text-center">

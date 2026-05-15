@@ -16,7 +16,9 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const plan = session.user.plan
-  if (plan === 'free') return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
+  if (plan !== 'pro' && plan !== 'enterprise') {
+    return NextResponse.json({ error: 'pro_plan_required', requiredPlan: 'pro' }, { status: 403 })
+  }
 
   const orgId = session.user.orgId
   if (!orgId) return NextResponse.json({ templates: [] })
@@ -34,8 +36,8 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const plan = session.user.plan
-  if (plan === 'free') {
-    return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
+  if (plan !== 'pro' && plan !== 'enterprise') {
+    return NextResponse.json({ error: 'pro_plan_required', requiredPlan: 'pro' }, { status: 403 })
   }
 
   const orgId = session.user.orgId
@@ -48,10 +50,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { name, tone, goal } = parsed.data
-  // Pro users can supply a custom system prompt; Starter gets the default
-  const systemPrompt = plan === 'pro' || plan === 'enterprise'
-    ? (parsed.data.systemPrompt ?? DEFAULT_SYSTEM_PROMPT)
-    : DEFAULT_SYSTEM_PROMPT
+  const systemPrompt = parsed.data.systemPrompt ?? DEFAULT_SYSTEM_PROMPT
 
   const template = await prisma.messageTemplate.create({
     data: { orgId, name, tone, goal, systemPrompt },

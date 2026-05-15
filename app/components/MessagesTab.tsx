@@ -28,6 +28,7 @@ interface Props {
 
 type TabState =
   | { kind: 'loading' }
+  | { kind: 'upgrade_required' }
   | { kind: 'no_templates' }
   | { kind: 'select_template'; templates: MessageTemplate[] }
   | { kind: 'generating'; templates: MessageTemplate[] }
@@ -40,7 +41,7 @@ export default function MessagesTab({ runId, plan }: Props) {
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | undefined>()
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [upgradeRequiredPlan, setUpgradeRequiredPlan] = useState<'starter' | 'pro'>('starter')
+  const [upgradeRequiredPlan, setUpgradeRequiredPlan] = useState<'starter' | 'pro'>('pro')
   const [showSchedulerModal, setShowSchedulerModal] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -51,12 +52,18 @@ export default function MessagesTab({ runId, plan }: Props) {
   const isFree = isFreePlan(plan)
 
   const templates =
-    state.kind !== 'loading' && state.kind !== 'no_templates' ? state.templates : []
+    state.kind !== 'loading' && state.kind !== 'no_templates' && state.kind !== 'upgrade_required'
+      ? state.templates
+      : []
   const activeTemplate = templates.find((t) => t.id === activeTemplateId) ?? templates[0] ?? null
 
   const loadTemplates = useCallback(async () => {
     try {
       const res = await fetch('/api/messages/templates')
+      if (res.status === 403) {
+        setState({ kind: 'upgrade_required' })
+        return
+      }
       if (!res.ok) throw new Error('Failed to load templates')
       const data = await res.json() as { templates: MessageTemplate[] }
       if (data.templates.length === 0) {
@@ -88,7 +95,7 @@ export default function MessagesTab({ runId, plan }: Props) {
 
   async function handleGenerate(template: MessageTemplate) {
     setState((prev) =>
-      prev.kind !== 'loading' && prev.kind !== 'no_templates'
+      prev.kind !== 'loading' && prev.kind !== 'no_templates' && prev.kind !== 'upgrade_required'
         ? { kind: 'generating', templates: prev.templates }
         : { kind: 'generating', templates: [] }
     )
@@ -173,7 +180,7 @@ export default function MessagesTab({ runId, plan }: Props) {
   function handleTemplateCreated(template: MessageTemplate) {
     setState((prev) => {
       if (prev.kind === 'no_templates') return { kind: 'select_template', templates: [template] }
-      if (prev.kind === 'loading') return { kind: 'select_template', templates: [template] }
+      if (prev.kind === 'loading' || prev.kind === 'upgrade_required') return { kind: 'select_template', templates: [template] }
       return { ...prev, templates: [...prev.templates, template] }
     })
     setActiveTemplateId(template.id)
@@ -181,8 +188,8 @@ export default function MessagesTab({ runId, plan }: Props) {
 
   function handleTemplateUpdated(updated: MessageTemplate) {
     setState((prev) => {
-      if (prev.kind === 'loading' || prev.kind === 'no_templates') return prev
-      return { ...prev, templates: prev.templates.map((t) => t.id === updated.id ? updated : t) }
+      if (prev.kind === 'loading' || prev.kind === 'no_templates' || prev.kind === 'upgrade_required') return prev
+      return { ...prev, templates: prev.templates.map((t: MessageTemplate) => t.id === updated.id ? updated : t) }
     })
   }
 
@@ -214,6 +221,38 @@ export default function MessagesTab({ runId, plan }: Props) {
     )
   }
 
+  // ── Upgrade required (non-Pro plan) ──────────────────────────────────────
+  if (state.kind === 'upgrade_required') {
+    return (
+      <>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-10 text-center">
+          <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+            </svg>
+          </div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-1">AI messages require Pro</h3>
+          <p className="text-xs text-gray-500 mb-5 max-w-xs mx-auto">
+            Generate personalised LinkedIn messages for your scored contacts and send them directly — available on the Pro plan.
+          </p>
+          <button
+            onClick={() => { setUpgradeRequiredPlan('pro'); setShowUpgradeModal(true) }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          >
+            Upgrade to Pro →
+          </button>
+        </div>
+        <UpgradeModal
+          trigger="AI message generation & LinkedIn delivery"
+          requiredPlan="pro"
+          isOpen={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          currentPlan={plan}
+        />
+      </>
+    )
+  }
+
   // ── No templates ─────────────────────────────────────────────────────────
   if (state.kind === 'no_templates') {
     return (
@@ -230,7 +269,7 @@ export default function MessagesTab({ runId, plan }: Props) {
           </p>
           <button
             onClick={() => {
-              if (isFree) { setUpgradeRequiredPlan('starter'); setShowUpgradeModal(true) } else { setEditingTemplate(undefined); setShowTemplateModal(true) }
+              if (plan !== 'pro' && plan !== 'enterprise') { setUpgradeRequiredPlan('pro'); setShowUpgradeModal(true) } else { setEditingTemplate(undefined); setShowTemplateModal(true) }
             }}
             className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
@@ -282,7 +321,7 @@ export default function MessagesTab({ runId, plan }: Props) {
             <div>
               <h3 className="text-sm font-semibold text-gray-900 mb-0.5">Generate messages</h3>
               <p className="text-xs text-gray-500">
-                {plan === 'starter' ? 'Up to 100 messages per run' : 'All contacts in this run'}
+                {'All contacts in this run'}
               </p>
             </div>
             <button
@@ -323,15 +362,15 @@ export default function MessagesTab({ runId, plan }: Props) {
             )}
           </div>
 
-          {isFree ? (
+          {plan !== 'pro' && plan !== 'enterprise' ? (
             <button
-              onClick={() => { setUpgradeRequiredPlan('starter'); setShowUpgradeModal(true) }}
+              onClick={() => { setUpgradeRequiredPlan('pro'); setShowUpgradeModal(true) }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              Generate messages — Starter+ only
+              Generate messages — Pro only
             </button>
           ) : (
             <button
@@ -430,7 +469,6 @@ export default function MessagesTab({ runId, plan }: Props) {
 
       <p className="text-xs text-gray-500 mb-3">
         {messages.length} message{messages.length !== 1 ? 's' : ''} generated
-        {plan === 'starter' && ' (100-contact limit)'}
       </p>
 
       {/* Bulk action bar */}

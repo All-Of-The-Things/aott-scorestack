@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { revalidatePath } from 'next/cache'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
 import { getPlanLimitsFor } from '@/app/lib/quota'
@@ -129,6 +130,21 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Dedup: reuse an existing model with the same name for this user.
+  if (userId) {
+    const existing = await prisma.scoringModel.findFirst({ where: { userId, name } })
+    if (existing) {
+      if (run_id) {
+        await prisma.run.updateMany({
+          where: { id: run_id, userId },
+          data: { modelId: existing.id },
+        })
+        revalidatePath(`/run/${run_id}/results`)
+      }
+      return NextResponse.json({ model_id: existing.id }, { status: 200 })
+    }
+  }
+
   const model = await prisma.scoringModel.create({
     data: {
       name,
@@ -144,6 +160,7 @@ export async function POST(request: NextRequest) {
       where: { id: run_id, userId },
       data: { modelId: model.id },
     })
+    revalidatePath(`/run/${run_id}/results`)
   }
 
   return NextResponse.json({ model_id: model.id }, { status: 201 })

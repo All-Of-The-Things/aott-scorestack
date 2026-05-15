@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import UpgradeModal from '@/app/components/UpgradeModal'
 
 interface Props {
   isAdmin: boolean
@@ -15,6 +16,7 @@ export default function ConnectSafelyCard({ isAdmin, isPro, connected, verifiedA
   const router = useRouter()
   const [modalOpen, setModalOpen] = useState(false)
   const [disconnectOpen, setDisconnectOpen] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [apiKey, setApiKey] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -142,12 +144,12 @@ export default function ConnectSafelyCard({ isAdmin, isPro, connected, verifiedA
                 Connect your account
               </button>
             ) : isAdmin && !isPro ? (
-              <div className="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
-                <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                </svg>
-                BYOK requires the Pro plan
-              </div>
+              <button
+                onClick={() => setShowUpgradeModal(true)}
+                className="w-full py-2.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              >
+                Upgrade to Pro to connect your account →
+              </button>
             ) : (
               <p className="text-xs text-gray-400">Managed by your account admin.</p>
             )}
@@ -155,8 +157,14 @@ export default function ConnectSafelyCard({ isAdmin, isPro, connected, verifiedA
         )}
       </div>
 
-      {/* Connect modal */}
-      {modalOpen && (
+      <UpgradeModal
+        trigger="LinkedIn delivery & BYOK integrations"
+        requiredPlan="pro"
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
+
+      {/* Connect modal */}      {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !loading && setModalOpen(false)} />
           <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-xl p-6">

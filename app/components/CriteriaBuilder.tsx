@@ -200,6 +200,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
         return
       }
       router.push(`/run/${runId}/results`)
+      router.refresh()
     } catch {
       setScoreError('Network error — please try again')
     } finally {
@@ -335,7 +336,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
           </p>
         </div>
         <button
-          onClick={plan === 'free' ? () => setUpgradeRequiredPlan('starter') : handleSuggest}
+          onClick={plan !== 'pro' && plan !== 'enterprise' ? () => setUpgradeRequiredPlan('pro') : handleSuggest}
           disabled={suggesting}
           className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg hover:bg-indigo-100 disabled:opacity-50 transition-colors"
         >
@@ -351,7 +352,8 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
       )}
 
       {/* Criteria rows */}
-      {criteria.length === 0 ? (
+      <div className="relative">
+        {criteria.length === 0 ? (
         <div className="border border-dashed border-gray-200 rounded-xl px-4 py-8 text-center text-xs text-gray-400">
           No criteria yet — click &ldquo;Suggest criteria for me&rdquo; or add one manually.
         </div>
@@ -526,6 +528,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
           Add criterion
         </button>
       )}
+      </div>
 
       {/* Weight sum indicator */}
       {criteria.length > 0 && (

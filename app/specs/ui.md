@@ -93,11 +93,10 @@ The workspace naming concept has been removed. There is no onboarding step.
 **Content by plan:**
 
 - **Free:** `"Free plan · 50 contacts per run"` + "Upgrade →" link. No progress bar — limit is per-run, not cumulative.
-- **Starter:** `"Starter plan · Unlimited enrichment"` + "Plan settings →" link → `/settings/billing`. No credit bar — monthly subscription covers enrichment with no per-run cap.
-- **Pro:** `"Pro plan · Unlimited enrichment"` + "Plan settings →" link → `/settings/billing`. No credit bar.
-- **Enterprise:** Hidden.
+- **Starter / Pro:** Credit balance bar showing `managedCreditsBalance` remaining. Colour thresholds: green > 200, amber 51–200, red ≤ 50. Bar width = `balance / 500`. "Buy more →" link to `/settings/billing`.
+- **Enterprise:** Hidden (returns null).
 
-No `resetDate` or credit balance bar for paid plans. Enrichment is covered by the monthly subscription and is not metered.
+Credit balance represents managed credit packs purchased on top of the monthly subscription — subscription covers enrichment, but purchased packs accumulate in `managedCreditsBalance` and are shown here.
 
 ---
 
@@ -169,10 +168,9 @@ No `resetDate` or credit balance bar for paid plans. Enrichment is covered by th
 - Green banner: "Account activated — you can now save scoring models and reuse them on future uploads."
 - Auto-removes `?activated=1` from the URL via `router.replace`.
 
-**Model limit gate** — shown inside `SaveModelModal` (not as a modal replacement) when `POST /api/models` returns 409:
-- Amber block: "You've reached your {limit}-model limit on the {plan} plan. Upgrade to Starter to save up to 5 models."
-- Link to `/settings/billing`
-- Save button disabled
+**Model limit gate** — when `POST /api/models` returns 409:
+- `SaveModelModal` fires `onLimitReached` callback + closes itself
+- `SaveModelButton` opens `UpgradeModal` with `trigger="You've reached your model limit"` and `requiredPlan="starter"`
 
 **New: Pagination (`ResultsTable`)**
 
@@ -392,10 +390,10 @@ Error pages (app router root):
 | EmailGate | `app/components/EmailGate.tsx` | ⚠️ Retired — soft email gate replaced by session requirement |
 | NotificationCheckGate | `app/components/NotificationCheckGate.tsx` | ⚠️ Retired — replaced by session gate on score/results pages |
 | WorkspaceNamePrompt | `app/components/WorkspaceNamePrompt.tsx` | ❌ Removed — workspace concept removed |
-| SaveModelButton | `app/components/SaveModelButton.tsx` | ✅ Built — authenticated state only |
-| SaveModelModal | `app/components/SaveModelModal.tsx` | ✅ Built — 409 upgrade prompt inline |
+| SaveModelButton | `app/components/SaveModelButton.tsx` | ✅ Built — authenticated state; router.refresh() after save; UpgradeModal on limit |
+| SaveModelModal | `app/components/SaveModelModal.tsx` | ✅ Built — calls onLimitReached callback on 409 |
 | ActivationBanner | `app/components/ActivationBanner.tsx` | ✅ Built — shown on `?activated=1`, cleans URL |
-| UsageBanner | `app/components/UsageBanner.tsx` | Not started |
+| UsageBanner | `app/components/UsageBanner.tsx` | ✅ Built — free plan pill; paid plan credit balance bar |
 | UpgradeModal | `app/components/UpgradeModal.tsx` | ✅ Built — plan comparison table + checkout CTA |
 | BillingCTAs | `app/settings/billing/BillingCTAs.tsx` | ✅ Built — plan selector, portal link (+ "Soon" state), dynamic credit packs via `creditPacks` prop (feature-flagged) |
 | ExportButton | `app/components/ExportButton.tsx` | ✅ Built — free top-10 hint, paid full export, 1.5s loading state |

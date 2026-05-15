@@ -2,19 +2,13 @@
 
 import { useState } from 'react'
 import type { PlanVariant, CreditPack } from '@/app/lib/billing'
+import { PLAN_HIGHLIGHTS } from '@/app/lib/planConfig'
 
 // ---------------------------------------------------------------------------
 // Types + constants
 // ---------------------------------------------------------------------------
 
 type KnownPlan = 'free' | 'starter' | 'pro' | 'enterprise'
-
-const PLAN_HIGHLIGHTS: Record<string, string[]> = {
-  free:       ['50 contacts per run', '1 scoring model', 'No CSV export'],
-  starter:    ['Unlimited contacts', '5 scoring models', 'CSV export', 'AI messages'],
-  pro:        ['Everything in Starter', 'Custom AI templates', 'LinkedIn delivery', '3 team seats'],
-  enterprise: ['Unlimited seats', 'CRM integrations', 'API access', 'SSO + white-label', 'Dedicated support & SLA'],
-}
 
 // Enterprise is always appended as the last option regardless of what LS returns.
 const ENTERPRISE_OPTION = {

@@ -32,8 +32,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ messages })
 }
 
-const STARTER_CAP = 100
-
 const bodySchema = z.object({
   run_id: z.string(),
   template_id: z.string(),
@@ -46,8 +44,8 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const plan = (session.user?.plan ?? 'free') as string
-  if (plan === 'free') {
-    return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
+  if (plan !== 'pro' && plan !== 'enterprise') {
+    return NextResponse.json({ error: 'pro_plan_required', requiredPlan: 'pro' }, { status: 403 })
   }
 
   const orgId = session.user?.orgId
@@ -60,7 +58,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { run_id, template_id, contact_ids } = parsed.data
-  let { top_n } = parsed.data
+  const { top_n } = parsed.data
 
   const run = await prisma.run.findUnique({
     where: { id: run_id },
@@ -68,11 +66,6 @@ export async function POST(req: NextRequest) {
   })
   if (!run || run.orgId !== orgId) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
-
-  // Apply Starter cap
-  if (plan === 'starter') {
-    top_n = Math.min(top_n ?? STARTER_CAP, STARTER_CAP)
   }
 
   // Resolve contactIds from top_n if provided and no explicit list

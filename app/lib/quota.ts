@@ -18,7 +18,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 // Fallback used on DB error — mirrors the seed values
 const FALLBACK: Record<string, PlanLimits> = {
   free:       { runLimit: 50,  modelLimit: 1,  seatLimit: 1,  isFree: true,  exportEnabled: false, messagesEnabled: false, deliveryEnabled: false },
-  starter:    { runLimit: -1,  modelLimit: 5,  seatLimit: 1,  isFree: false, exportEnabled: true,  messagesEnabled: true,  deliveryEnabled: false },
+  starter:    { runLimit: -1,  modelLimit: 5,  seatLimit: 1,  isFree: false, exportEnabled: true,  messagesEnabled: false, deliveryEnabled: false },
   pro:        { runLimit: -1,  modelLimit: -1, seatLimit: 3,  isFree: false, exportEnabled: true,  messagesEnabled: true,  deliveryEnabled: true  },
   enterprise: { runLimit: -1,  modelLimit: -1, seatLimit: -1, isFree: false, exportEnabled: true,  messagesEnabled: true,  deliveryEnabled: true  },
 }

@@ -1,5 +1,5 @@
 # Scorestack — Product Specification (Growth)
-_Last refined: SPEC::REFINE Phase 09 (bug fixes) — org bootstrap session callback fallback; run claiming mechanic; SaveModelButton backend-only enforcement; MessagesTab handleSend plan routing_
+_Last refined: SPEC::REFINE Phase 12 — SaveModelModal onLimitReached callback; UsageBanner implementation; ConnectSafely BYOK delivery; OrgInvite model; NEXT_PUBLIC_ env var names; router.refresh() cache busting; model deduplication_
 
 ## Overview
 
@@ -97,7 +97,7 @@ A verified session is required from the score page onwards. Scored results conta
 - If session but no `userId` (unexpected): returns 503
 - Counts `prisma.scoringModel.count({ where: { userId } })` against `PLAN_MODEL_LIMITS`
 - Returns 409 `model_limit_reached` with `{ limit, plan }` when at capacity
-- `SaveModelModal` shows inline upgrade prompt on 409
+- On 409: `SaveModelModal` fires its `onLimitReached` callback → `SaveModelButton` closes the save modal and opens `UpgradeModal`
 - The frontend (`SaveModelButton`) does NOT gate free users from opening the modal — all authenticated users can attempt to save. The backend 409 is the only enforcement point, ensuring the limit is plan-accurate regardless of UI state.
 
 ### Starter — $29 / month

@@ -10,19 +10,23 @@ export async function GET() {
   const orgId = session.user.orgId
   if (!orgId) return NextResponse.json({ error: 'account_setup_incomplete' }, { status: 503 })
 
-  const [org, modelsUsed, seats] = await Promise.all([
-    prisma.organization.findUnique({
-      where: { id: orgId },
-      select: { plan: true, managedCreditsBalance: true },
-    }),
-    prisma.scoringModel.count({ where: { orgId } }),
-    prisma.user.count({ where: { orgId } }),
-  ])
-
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { plan: true, managedCreditsBalance: true },
+  })
   if (!org) return NextResponse.json({ error: 'org_not_found' }, { status: 404 })
 
-  const plan = org.plan as string
-  const limits = await getPlanLimitsFor(plan)
+  const plan   = org.plan as string
+  const isFree = plan === 'free'
+
+  const [modelsUsed, seats, runCount, limits] = await Promise.all([
+    prisma.scoringModel.count({ where: { orgId } }),
+    prisma.user.count({ where: { orgId } }),
+    isFree
+      ? prisma.run.count({ where: { orgId, status: { in: ['enriching', 'scoring', 'complete'] } } })
+      : Promise.resolve(null),
+    getPlanLimitsFor(plan),
+  ])
 
   return NextResponse.json({
     plan,
@@ -32,5 +36,6 @@ export async function GET() {
     modelsLimit: limits.modelLimit,
     seats,
     seatsLimit: limits.seatLimit,
+    runCount,
   })
 }

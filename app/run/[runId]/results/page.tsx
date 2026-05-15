@@ -306,7 +306,7 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
             <ExportButton runId={runId} plan={plan} />
           </div>
 
-          <ResultsTable results={serialized} criteria={criteria} defaultPageSize={defaultPageSize} shouldBlurContent={isFree} />
+          <ResultsTable results={serialized} criteria={criteria} defaultPageSize={defaultPageSize} shouldBlurContent={isFree} maxVisible={isFree ? 5 : undefined} />
 
           </>
           )}
