@@ -37,7 +37,9 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const plan = session.user.plan
-  if (plan === 'free') return NextResponse.json({ error: 'plan_required', requiredPlan: 'starter' }, { status: 403 })
+  if (plan !== 'pro' && plan !== 'enterprise') {
+    return NextResponse.json({ error: 'pro_plan_required', requiredPlan: 'pro' }, { status: 403 })
+  }
 
   let body: z.infer<typeof SuggestBodySchema>
   try {

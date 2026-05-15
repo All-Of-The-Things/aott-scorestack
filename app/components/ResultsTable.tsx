@@ -291,13 +291,16 @@ interface ResultsTableProps {
   criteria: CriterionMeta[]
   defaultPageSize: number
   shouldBlurContent: boolean
+  maxVisible?: number
 }
 
-export default function ResultsTable({ results, criteria, defaultPageSize, shouldBlurContent }: ResultsTableProps) {
+export default function ResultsTable({ results, criteria, defaultPageSize, shouldBlurContent, maxVisible }: ResultsTableProps) {
   const [expanded, setExpanded]     = useState<Set<string>>(new Set())
   const [page, setPage]             = useState(1)
   const [pageSize, setPageSize]     = useState(defaultPageSize)
   const [showUpgrade, setShowUpgrade] = useState(false)
+
+  const lockedCount = maxVisible !== undefined ? Math.max(0, results.length - maxVisible) : 0
 
   function handlePageSizeChange(size: number) {
     setPageSize(size)
@@ -375,17 +378,22 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {pageResults.map((result) => (
+            {pageResults.map((result) => {
+              const isLocked = maxVisible !== undefined && result.rank > maxVisible
+              return (
               <React.Fragment key={result.id}>
                 {/* Main row */}
                 <tr
-                  onClick={() => toggle(result.id)}
+                  onClick={() => isLocked ? setShowUpgrade(true) : toggle(result.id)}
                   className="cursor-pointer hover:bg-gray-50 transition-colors"
                 >
                   <td className="pl-6 pr-3 py-3 tabular-nums text-gray-400 font-medium">
-                    {result.rank}
+                    <span className={isLocked ? 'blur-sm select-none' : ''}>{result.rank}</span>
                   </td>
                   <td className="px-3 py-3 max-w-[240px]">
+                    {isLocked ? (
+                      <span className="blur-sm select-none text-blue-600">linkedin.com/in/••••••••••</span>
+                    ) : (
                     <a
                       href={result.linkedinUrl}
                       target="_blank"
@@ -396,27 +404,32 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
                       {result.contactName ??
                         result.linkedinUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, '')}
                     </a>
-                    {result.contactHeadline && (
+                    )}
+                    {!isLocked && result.contactHeadline && (
                       <span className="text-xs text-gray-400 truncate block">{result.contactHeadline}</span>
                     )}
                   </td>
                   <td className="px-3 py-3">
-                    <StatusBadge status={result.enrichmentStatus} />
+                    <span className={isLocked ? 'blur-sm select-none' : ''}>
+                      <StatusBadge status={result.enrichmentStatus} />
+                    </span>
                   </td>
                   <td className="px-3 py-3">
+                    <span className={isLocked ? 'blur-sm select-none' : ''}>
                     {result.enrichmentStatus === 'success' ? (
                       <ScoreBar score={result.totalScore} />
                     ) : (
                       <span className="text-gray-300 text-[10px] italic">Not enriched</span>
                     )}
+                    </span>
                   </td>
                   <td className="pl-3 pr-6 py-3 text-right">
-                    <Chevron expanded={expanded.has(result.id)} />
+                    {!isLocked && <Chevron expanded={expanded.has(result.id)} />}
                   </td>
                 </tr>
 
                 {/* Expandable detail row */}
-                {expanded.has(result.id) && (
+                {!isLocked && expanded.has(result.id) && (
                   <tr className="bg-gray-50">
                     <td colSpan={detailColSpan} className="pl-16 pr-6 py-4">
                       {shouldBlurContent ? (
@@ -431,21 +444,38 @@ export default function ResultsTable({ results, criteria, defaultPageSize, shoul
                   </tr>
                 )}
               </React.Fragment>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
 
+      {/* Locked results CTA */}
+      {lockedCount > 0 && (
+        <div className="border-t border-gray-100 px-6 py-4 flex items-center justify-between gap-4 bg-gray-50/60">
+          <p className="text-xs text-gray-500">
+            <span className="font-medium text-gray-700">{lockedCount} more result{lockedCount !== 1 ? 's' : ''} locked</span>
+            {' '}— upgrade to see the full ranked list
+          </p>
+          <button
+            onClick={() => setShowUpgrade(true)}
+            className="shrink-0 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Upgrade →
+          </button>
+        </div>
+      )}
+
       {/* Pagination — bottom */}
-      {results.length > pageSize && (
+      {results.length > pageSize && !lockedCount && (
         <div className="border-t border-gray-100">
           <PaginationBar {...paginationProps} />
         </div>
       )}
 
-      {shouldBlurContent && (
+      {(shouldBlurContent || lockedCount > 0) && (
         <UpgradeModal
-          trigger="Unlock enrichment details and score breakdown"
+          trigger={lockedCount > 0 ? 'Unlock all results' : 'Unlock enrichment details and score breakdown'}
           requiredPlan="starter"
           isOpen={showUpgrade}
           onClose={() => setShowUpgrade(false)}

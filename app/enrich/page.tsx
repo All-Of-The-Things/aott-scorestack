@@ -150,6 +150,7 @@ export default function EnrichPage() {
               notifyEmail={notifyEmail ?? undefined}
               onComplete={handleEnrichComplete}
               onError={handleEnrichError}
+              currentPlan={session?.user?.plan ?? 'free'}
             />
             {scoring && (
               <div className="mt-4 text-center">
