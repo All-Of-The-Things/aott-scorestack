@@ -5,6 +5,8 @@ import { EnrichmentStatus } from '@/app/generated/prisma/client'
 import prisma from '@/app/lib/prisma'
 import { suggestCriteria, type EnrichedSample } from '@/app/lib/suggestions'
 
+export const maxDuration = 15 * 60 * 1000 // 15 minutes
+
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
