@@ -391,6 +391,8 @@ model Run {
   enrichedCount       Int           @default(0) @map("enriched_count")
   failedCount         Int           @default(0) @map("failed_count")
   status              RunStatus     @default(pending)
+  blobUrl             String?       @map("blob_url")
+  linkedinColumn      String?       @map("linkedin_column")
   aiSuggestedCriteria Json?         @map("ai_suggested_criteria")
   scoringCriteria     Json?         @map("scoring_criteria")
   avgEnrichmentMs     Int?          @map("avg_enrichment_ms")
