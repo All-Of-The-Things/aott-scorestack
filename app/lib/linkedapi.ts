@@ -124,13 +124,14 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
             profile.employee_count = String(co.employeesCount)
           }
         }
-      } catch {
-        console.warn("Failed to fetch company data for URL:", person.companyHashedUrl)
+      } catch (coErr) {
+        console.warn('[linkedapi] fetchCompany failed for', person.companyHashedUrl, coErr)
       }
     }
 
     return { status: 'success', profile }
   } catch (err) {
+    console.error('[linkedapi] fetchPerson failed for', linkedinUrl, err)
     if (err instanceof LinkedApiError) {
       return {
         status: 'failed',
