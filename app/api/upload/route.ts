@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Blob upload failed'
     console.error('[upload] Vercel Blob upload failed:', message)
-    return NextResponse.json({ error: 'Failed to store uploaded file' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to store uploaded file. Please, try again later.' }, { status: 500 })
   }
 
   const response: UploadResponse = {

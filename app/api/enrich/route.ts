@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         runId = run.id
       } catch (err) {
         console.error('Error creating run record:', err)
-        send({ type: 'error', message: 'Failed to create run record', error: err instanceof Error ? err.message : String(err) })
+        send({ type: 'error', message: 'Something went wrong. Please try again.' })
         closeStream()
         return
       }
@@ -163,9 +163,9 @@ export async function POST(request: NextRequest) {
 
         csvText = await new Response(blob.stream).text()
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch CSV from blob'
+        console.error('[enrich] Blob fetch failed:', err)
         await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
-        send({ type: 'error', message })
+        send({ type: 'error', message: "We couldn't load your file. Please try uploading it again." })
         closeStream()
         return
       }
@@ -176,9 +176,9 @@ export async function POST(request: NextRequest) {
         const parsed = parseCSV(csvText)
         rows = parsed.rows
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'CSV parse failed'
+        console.error('[enrich] CSV parse failed:', err)
         await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
-        send({ type: 'error', message })
+        send({ type: 'error', message: "Your file couldn't be read. Make sure it's a valid CSV." })
         closeStream()
         return
       }
@@ -239,6 +239,17 @@ export async function POST(request: NextRequest) {
           result.profile?.first_name ??
           linkedinUrl) ||
           `Row ${i + 1}`
+
+        // Hard-stop: provider-level failure — no further contacts will succeed
+        if (result.abort) {
+          await prisma.run.update({
+            where: { id: runId },
+            data: { status: RunStatus.failed, enrichedCount, failedCount },
+          })
+          send({ type: 'provider_error', code: result.abortCode ?? 'provider_unavailable' })
+          closeStream()
+          return
+        }
 
         // Persist run_result row
         await prisma.runResult.create({
