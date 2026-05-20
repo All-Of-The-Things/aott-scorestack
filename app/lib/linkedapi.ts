@@ -21,8 +21,24 @@ export interface LinkedInProfile {
 export interface FetchProfileResult {
   status: 'success' | 'failed' | 'skipped'
   profile: LinkedInProfile | null
-  error?: string
+  error?: string  // internal only — logged server-side, never sent to client
+  abort?: boolean
+  abortCode?: 'limit_exceeded' | 'session_disconnected' | 'subscription_required' | 'auth_error' | 'provider_unavailable'
 }
+
+// ---------------------------------------------------------------------------
+// Hard-stop error types — these indicate a provider-level failure that no
+// further fetchProfile calls will recover from (bad tokens, disconnected
+// session, subscription issue). The enrich loop should abort immediately.
+// ---------------------------------------------------------------------------
+
+const HARD_STOP_ERROR_TYPES = new Set([
+  'linkedinAccountSignedOut',
+  'subscriptionRequired',
+  'invalidLinkedApiToken',
+  'invalidIdentificationToken',
+  'plusPlanRequired',
+])
 
 // ---------------------------------------------------------------------------
 // SDK client — singleton, initialised on first use.
@@ -70,6 +86,16 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
     };
   }
 
+  if (process.env.LINKED_API_SIMULATE_LIMIT === 'true') {
+    return {
+      status: 'failed',
+      profile: null,
+      error: 'LinkedAPI errors: {"type":"limitExceeded","message":"The configured limit for this action category has been exceeded."}',
+      abort: true,
+      abortCode: 'limit_exceeded',
+    }
+  }
+
   if (!linkedinUrl || !linkedinUrl.includes('linkedin.com')) {
     return { status: 'skipped', profile: null, error: 'Invalid or missing LinkedIn URL' }
   }
@@ -84,8 +110,11 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
     const personResult = await client.fetchPerson.result(workflowId)
 
     if (personResult.errors.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const abort = (personResult.errors as any[]).some((e) => e.type === 'limitExceeded')
       const errorMsg = personResult.errors.map((e) => JSON.stringify(e)).join('; ')
-      return { status: 'failed', profile: null, error: `LinkedAPI errors: ${errorMsg}` }
+      const abortCode = abort ? 'limit_exceeded' as const : undefined
+      return { status: 'failed', profile: null, error: `LinkedAPI errors: ${errorMsg}`, abort, abortCode }
     }
 
     if (!personResult.data) {
@@ -124,20 +153,27 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
             profile.employee_count = String(co.employeesCount)
           }
         }
-      } catch {
-        console.warn("Failed to fetch company data for URL:", person.companyHashedUrl)
+      } catch (coErr) {
+        console.warn('[linkedapi] fetchCompany failed for', person.companyHashedUrl, coErr)
       }
     }
 
     return { status: 'success', profile }
   } catch (err) {
     if (err instanceof LinkedApiError) {
-      return {
-        status: 'failed',
-        profile: null,
-        error: `LinkedAPI error: ${err.message}`,
+      const abort = HARD_STOP_ERROR_TYPES.has(err.type)
+      const CODE_MAP: Partial<Record<string, FetchProfileResult['abortCode']>> = {
+        linkedinAccountSignedOut:    'session_disconnected',
+        subscriptionRequired:        'subscription_required',
+        plusPlanRequired:            'subscription_required',
+        invalidLinkedApiToken:       'auth_error',
+        invalidIdentificationToken:  'auth_error',
       }
+      const abortCode = abort ? (CODE_MAP[err.type] ?? 'provider_unavailable') : undefined
+      console.error('[linkedapi] fetchPerson failed for', linkedinUrl, { type: err.type, abort })
+      return { status: 'failed', profile: null, error: `LinkedAPI error: ${err.message}`, abort, abortCode }
     }
+    console.error('[linkedapi] fetchPerson failed for', linkedinUrl, err)
     return {
       status: 'failed',
       profile: null,

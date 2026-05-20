@@ -1,4 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx prisma generate && npx prisma migrate deploy && npm run build"
+  "buildCommand": "npx prisma generate && npx prisma migrate deploy && npm run build",
+  "functions": {
+    "app/api/enrich/route.ts": { "maxDuration": 600 },
+    "app/api/suggest/route.ts": { "maxDuration": 300 },
+    "app/api/messages/generate/route.ts": { "maxDuration": 600 }
+  }
 }

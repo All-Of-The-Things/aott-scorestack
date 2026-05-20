@@ -85,6 +85,8 @@ export default function EnrichmentProgress({
   const [isQuotaError, setIsQuotaError] = useState(false)
   const [quotaErrorDetails, setQuotaErrorDetails] = useState<{ message: string; balance?: number; needed?: number } | null>(null)
   const [isRunLimitError, setIsRunLimitError] = useState(false)
+  const [isProviderError, setIsProviderError] = useState(false)
+  const [providerErrorCode, setProviderErrorCode] = useState<string>('')
 
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -113,7 +115,7 @@ export default function EnrichmentProgress({
         })
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
-        const msg = err instanceof Error ? err.message : 'Failed to start enrichment'
+        const msg = 'Something went wrong. Please try again.'
         setErrorMessage(msg)
         setStep('error')
         onError(msg)
@@ -131,7 +133,7 @@ export default function EnrichmentProgress({
             }
           } catch { /* fall through to generic error */ }
         }
-        const msg = `Enrichment request failed (${res.status})`
+        const msg = 'Something went wrong. Please try again.'
         setErrorMessage(msg)
         setStep('error')
         onError(msg)
@@ -201,6 +203,12 @@ export default function EnrichmentProgress({
                 onComplete(rid)
               }
               return
+            } else if (event.type === 'provider_error') {
+              const code = (event.code as string) || 'provider_unavailable'
+              setIsProviderError(true)
+              setProviderErrorCode(code)
+              setStep('error')
+              return
             } else if (event.type === 'error') {
               if (event.code === 'quota_exceeded') {
                 setIsQuotaError(true)
@@ -222,7 +230,7 @@ export default function EnrichmentProgress({
         }
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
-        const msg = err instanceof Error ? err.message : 'Stream read error'
+        const msg = 'Connection lost. Please try again.'
         setErrorMessage(msg)
         setStep('error')
         onError(msg)
@@ -277,6 +285,17 @@ export default function EnrichmentProgress({
   // ---------------------------------------------------------------------------
   // Error state
   // ---------------------------------------------------------------------------
+
+  function providerErrorMessage(code: string): string {
+    switch (code) {
+      case 'limit_exceeded':        return 'Daily enrichment limit reached. Please try again tomorrow.'
+      case 'session_disconnected':  return 'Your LinkedIn session has been disconnected. Please reconnect in your LinkedAPI dashboard.'
+      case 'subscription_required': return "There's an issue with your LinkedAPI plan. Please check your account."
+      case 'auth_error':            return 'LinkedAPI authentication failed. Please check your credentials.'
+      default:                      return 'Enrichment is temporarily unavailable. Please try again later.'
+    }
+  }
+
   if (step === 'error') {
     if (isRunLimitError) {
       return (
@@ -339,6 +358,28 @@ export default function EnrichmentProgress({
           <button
             onClick={() => onError(quotaErrorDetails.message)}
             className="mt-3 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            ← Start over
+          </button>
+        </div>
+      )
+    }
+
+    if (isProviderError) {
+      return (
+        <div className="bg-white rounded-2xl shadow-sm border border-amber-200 p-8 max-w-sm w-full mx-auto text-center">
+          <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto">
+            <svg className="w-5 h-5 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+          </div>
+          <h2 className="mt-4 text-sm font-semibold text-gray-800">Enrichment unavailable</h2>
+          <p className="mt-1.5 text-xs text-gray-600 bg-amber-50 rounded-lg px-3 py-2">
+            {providerErrorMessage(providerErrorCode)}
+          </p>
+          <button
+            onClick={() => onError(providerErrorMessage(providerErrorCode))}
+            className="mt-5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
           >
             ← Start over
           </button>
