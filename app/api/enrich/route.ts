@@ -10,7 +10,7 @@ import { sendEnrichmentComplete, sendEnrichmentStarted } from '@/app/lib/notify'
 import { InputJsonObject } from '@prisma/client/runtime/client'
 import { get } from '@vercel/blob'
 
-export const maxDuration = 900 // 15 minutes in seconds (vercel.json caps at 600)
+export const maxDuration = 800 // 15 minutes in seconds (vercel.json caps at 600)
 
 // ---------------------------------------------------------------------------
 // Validation
