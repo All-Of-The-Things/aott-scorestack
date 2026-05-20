@@ -573,6 +573,61 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 
 ---
 
+## Phase 13 — Async Enrichment Redesign
+**Goal:** Remove Vercel timeout constraint by moving all enrichment work to Inngest background jobs. SSE streaming eliminated; enrichment is always fire-and-forget with email notification.
+
+- [x] **T-50** Add `blobUrl` + `linkedinColumn` to `Run` schema
+  - `prisma/schema.prisma`: add `blobUrl String? @map("blob_url")` and `linkedinColumn String? @map("linkedin_column")` to `Run` model
+  - `prisma migrate dev --name add_run_blob_fields` — generates migration
+  - `prisma generate` to update client
+
+- [x] **T-51** Install Inngest + wire route handler
+  - `npm install inngest`
+  - Create `app/lib/inngest.ts` — export `inngest` client (`new Inngest({ id: 'scorestack' })`)
+  - Create `app/api/inngest/route.ts` — export `{ GET, POST, PUT }` from `serve({ client: inngest, functions: [enrichContacts] })`
+  - Add env var: `INNGEST_EVENT_KEY` (production), `INNGEST_SIGNING_KEY` (production)
+
+- [x] **T-52** Create Inngest `enrich-contacts` function
+  - File: `app/lib/inngest.ts` or `app/inngest/enrich.ts`
+  - Triggered by event `enrich/contacts.requested` with payload `{ runId: string }`
+  - Logic: moved from current `POST /api/enrich` stream handler:
+    - Update `Run.status = 'enriching'`; fetch blob via `get(run.blobUrl)`; parse CSV
+    - Apply free-plan quota cap (truncate rows, update `Run.totalContacts`)
+    - Enrich contacts sequentially with `fetchProfile()`; write `RunResult` rows per contact
+    - On provider abort: `Run.status = 'failed'`; return early
+    - On completion: `Run.status = 'scoring'`; update counts + timing; create `UsageLog`
+    - Send completion email (deduped via `EnrichmentNotification`)
+
+- [x] **T-53** Refactor `POST /api/enrich` — fire-and-forget, return JSON
+  - File: `app/api/enrich/route.ts`
+  - Remove: SSE stream, `ReadableStream`, `sseMessage`, `maxDuration`
+  - Keep: request validation, quota check (free run limit), run creation
+  - Add: store `blobUrl` + `linkedinColumn` on run; call `sendEnrichmentStarted`; `inngest.send('enrich/contacts.requested', { data: { runId } })`
+  - Return: `Response.json({ run_id: runId })`
+
+- [x] **T-54** Replace `EnrichmentChoice` with `EnrichmentConfirm`
+  - File: `app/components/EnrichmentChoice.tsx` (repurpose in-place — keeps import paths stable)
+  - Remove: two-path card, "Wait here" button, "Notify me" expand pattern
+  - Replace with: single card showing filename; email input (pre-filled from `initialEmail`; required); "Start enrichment →" submit button with loading state
+  - Props: `filename`, `initialEmail?`, `onSubmit: (email: string) => Promise<void>`
+
+- [x] **T-55** Replace `EnrichmentProgress` with `EnrichmentSubmitted`
+  - File: `app/components/EnrichmentProgress.tsx` (repurpose in-place)
+  - Remove: all SSE fetch logic, progress bar, contact log, error states
+  - Replace with: static confirmation card — green checkmark, "Enrichment started", "We'll email {notifyEmail} when results are ready", "View all enrichments →" CTA to `/runs`
+  - Props: `notifyEmail: string`, `onStartAnother: () => void`
+
+- [x] **T-56** Update `app/enrich/page.tsx`
+  - Remove stages: `choose`, `enriching`, `link-sent`
+  - Remove state: `notifyEmail`, `scoring`, `selectedModel` post-enrichment flow
+  - Add stage: `submitted`
+  - Flow: `upload` → `confirm` → (POST /api/enrich) → `submitted`
+  - `confirm` stage renders `EnrichmentChoice` (now `EnrichmentConfirm`)
+  - `submitted` stage renders `EnrichmentProgress` (now `EnrichmentSubmitted`)
+  - On submit: call `POST /api/enrich`, handle 402 (UpgradeModal), navigate to `submitted` on success
+
+---
+
 ## New files summary
 
 | File | Phase |
@@ -621,6 +676,8 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 | `app/settings/team/page.tsx` | 11 |
 | `app/settings/team/TeamCard.tsx` | 11 |
 | `app/components/Breadcrumb.tsx` | 10b post-ship |
+| `app/lib/inngest.ts` | 13 |
+| `app/api/inngest/route.ts` | 13 |
 
 ## Modified files summary
 
@@ -628,8 +685,10 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
 |------|-------|--------|
 | `prisma/schema.prisma` | 1 | Add all new models + enums |
 | `app/layout.tsx` | 2 | Add Nav + UsageBanner |
-| `app/api/enrich/route.ts` | 4, 5 | Quota check + deferred notify |
-| `app/components/EnrichmentProgress.tsx` | 5 | Two-path UX |
+| `app/api/enrich/route.ts` | 4, 5, 13 | Quota check; async fire-and-forget via Inngest |
+| `app/components/EnrichmentChoice.tsx` | 5, 13 | Replaced with EnrichmentConfirm (single email + submit) |
+| `app/components/EnrichmentProgress.tsx` | 5, 13 | Replaced with EnrichmentSubmitted (static confirmation) |
+| `app/enrich/page.tsx` | 5, 13 | Removed choose/enriching/link-sent stages; added submitted stage |
 | `app/run/[runId]/score/page.tsx` | 5, 9 (bug fix) | Polling fallback; run claiming on page load |
 | `app/run/[runId]/results/page.tsx` | 6, 7, 9 (bug fix) | Export button + Messages tab; run claiming on page load |
 | `app/lib/delivery.ts` | 9 | ConnectSafely delivery feature flag |
@@ -676,4 +735,8 @@ CONNECT_SAFELY_API_KEY=                # ConnectSafely REST API key (delivery)
 CONNECT_SAFELY_DELIVERY_ENABLED=       # true = route delivery through ConnectSafely (permanent control)
 CONNECT_SAFELY_ENRICHMENT_ENABLED=     # true = route enrichment through ConnectSafely (alternative)
 LINKED_API_ENRICHMENT_ENABLED=         # true = route enrichment through LinkedAPI (primary path; default)
+
+# Phase 13 — Inngest async enrichment
+INNGEST_EVENT_KEY=                     # Inngest event key (production only — auto-set in dev via Inngest Dev Server)
+INNGEST_SIGNING_KEY=                   # Inngest signing key (production only)
 ```

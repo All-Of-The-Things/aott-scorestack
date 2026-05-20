@@ -5,7 +5,7 @@
 - Existing Tailwind design language and colour palette remain unchanged
 - Gates are surfaced as modals — never as broken/disabled states without explanation
 - Usage quota is always visible to logged-in users
-- Deferred enrichment path is presented as a first-class choice, not a fallback
+- Enrichment is always async — submit and navigate away; no live-watching option
 
 ---
 
@@ -100,52 +100,54 @@ Credit balance represents managed credit packs purchased on top of the monthly s
 
 ---
 
-### 5. Pre-Enrichment Choice + Enrichment Progress
+### 5. Pre-Enrichment Confirm + Enrichment Submitted
 
-**Pre-enrichment choice screen** (`EnrichmentChoice` component) — shown between upload confirmation and enrichment start (NOT during enrichment):
+All enrichment is asynchronous. There is no "Wait here" option.
+
+**Pre-enrichment confirm screen** (`EnrichmentConfirm` component) — shown between upload confirmation and enrichment start:
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │  contacts.csv                                       │
-│  Ready to enrich — how would you like to proceed?  │
+│  Ready to enrich                                    │
 │                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │  Wait here                                  │   │
-│  │  Stay on this page and watch progress       │   │
-│  └─────────────────────────────────────────────┘   │
+│  Notify me when done                                │
+│  [ you@example.com              ]                   │
 │                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │  Notify me by email                         │   │
-│  │  Start in background, email me when ready   │   │
-│  │  [ you@example.com ] [Start & notify]       │   │
-│  └─────────────────────────────────────────────┘   │
+│  [ Start enrichment → ]                             │
 └─────────────────────────────────────────────────────┘
 ```
 
-- "Wait here" immediately transitions to `EnrichmentProgress` (SSE stream starts)
-- "Notify me" expands email input on click → submit passes `notify_email` in `POST /api/enrich` → transitions to `EnrichmentProgress`
-- `EnrichmentProgress` shows bottom banner when `notifyEmail` prop is set: "We'll email {email} when results are ready. You can safely close this tab."
+- Email input pre-filled from `session.user.email` if authenticated; always required
+- On submit: `POST /api/enrich` → returns `{ run_id }` → transitions to `submitted` stage
+- Submit button disabled while request is in flight; shows spinner
 
-**In-browser completion (browser still open, user unauthenticated):**
-- When the SSE `complete` event fires and `notifyEmail` is set (user is not signed in):
-  - Client sets `auth_next` cookie to `/run/:runId/score`
-  - Client calls `signIn('resend', { email: notifyEmail, redirect: false })` silently
-  - Transitions to `link-sent` stage:
-    - Green envelope icon
-    - Heading: "Check your inbox"
-    - Copy: "Enrichment complete! We sent a sign-in link to {notifyEmail}. Click it to score your contacts."
-    - "Didn't receive it? Start over" link
-  - No second email prompt — the email from `EnrichmentChoice` is reused
+**Enrichment submitted screen** (`EnrichmentSubmitted` component):
 
-**Completion email** (sent by server when enrichment finishes with `notifyEmail` set — covers the "navigated away" case):
+```
+┌─────────────────────────────────────────────────────┐
+│  ✓                                                  │
+│  Enrichment started                                 │
+│  We'll email you@example.com when results are ready │
+│                                                     │
+│  View all enrichments →   (/runs)                   │
+└─────────────────────────────────────────────────────┘
+```
+
+- Static confirmation card — no polling on this screen
+- "View all enrichments →" links to `/runs`
+- "Start another enrichment" secondary link resets to upload stage
+
+**Completion email** (sent by server when enrichment finishes):
 - **Single CTA: "Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:runId/score`
 - No direct results link — clicking the sign-in link verifies the user and grants a session in one step
 
-**Polling fallback (returning user):**
-- If user navigates to `/run/:runId` while status is `enriching`:
-  - Show spinner + "Still enriching… {enrichedCount} / {totalContacts} processed"
+**Run detail status view** (nice-to-have, `/run/:runId`):
+- If user navigates to a run while `status` is `pending` or `enriching`:
+  - Show spinner + "Enriching… {enrichedCount} / {totalContacts} contacts processed"
   - Poll `/api/runs/:runId/status` every 5s
-  - On `status === 'complete'`: auto-redirect to `/run/:runId/score`
+  - Show partial results table as `RunResult` rows arrive
+  - When `status === 'scoring'`: show "Ready to score →" CTA to `/run/:runId/score`
 
 ---
 
