@@ -1,23 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useSession, signIn } from 'next-auth/react'
+import { useSession } from 'next-auth/react'
 import UploadForm, { type ConfirmedUpload } from '@/app/components/UploadForm'
-import EnrichmentChoice from '../components/EnrichmentChoice'
-import EnrichmentProgress from '../components/EnrichmentProgress'
+import EnrichmentConfirm from '../components/EnrichmentChoice'
+import EnrichmentSubmitted from '../components/EnrichmentProgress'
 import SavedModels from '../components/SavedModels'
 import AppHeader from '../components/AppHeader'
+import UpgradeModal from '../components/UpgradeModal'
 
 export default function EnrichPage() {
-  const router = useRouter()
   const { data: session, status } = useSession()
-  const [stage, setStage] = useState<'upload' | 'choose' | 'enriching' | 'link-sent'>('upload')
+  const [stage, setStage] = useState<'upload' | 'confirm' | 'submitted'>('upload')
   const [confirmed, setConfirmed] = useState<ConfirmedUpload | null>(null)
-  const [notifyEmail, setNotifyEmail] = useState<string | null>(null)
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null)
   const [enrichError, setEnrichError] = useState<string | null>(null)
+  const [showRunLimit, setShowRunLimit] = useState(false)
   const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
-  const [scoring, setScoring] = useState(false)
   const [enrichmentName, setEnrichmentName] = useState(() => {
     const now = new Date()
     return `Data enrichment - ${now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
@@ -25,148 +24,109 @@ export default function EnrichPage() {
 
   const userEmail = status === 'authenticated' ? session.user.email : null
 
-  const handleEnrichError = (message: string) => {
-    setEnrichError(message)
+  const handleSubmit = async (email: string) => {
+    if (!confirmed) return
+
+    try {
+      const res = await fetch('/api/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blob_url:          confirmed.blob_url,
+          linkedin_column:   confirmed.linkedin_column,
+          original_filename: confirmed.original_filename,
+          notify_email:      email,
+          name:              enrichmentName,
+          ...(selectedModel ? { model_id: selectedModel.id } : {}),
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (res.status === 402 && data.error === 'run_limit_reached') {
+          setShowRunLimit(true)
+          return
+        }
+        setEnrichError(data.error ?? `Something went wrong (${res.status}). Please try again.`)
+        return
+      }
+
+      setSubmittedEmail(email)
+      setStage('submitted')
+    } catch {
+      setEnrichError('Network error. Please try again.')
+    }
+  }
+
+  const resetToUpload = () => {
     setStage('upload')
     setConfirmed(null)
-    setNotifyEmail(null)
+    setSubmittedEmail(null)
+    setEnrichError(null)
     setSelectedModel(null)
+    setShowRunLimit(false)
+    setEnrichmentName(() => {
+      const now = new Date()
+      return `Data enrichment - ${now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+    })
   }
 
-  const handleEnrichComplete = async (runId: string) => {
-    if (selectedModel) {
-      setScoring(true)
-      try {
-        const res = await fetch('/api/score', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ run_id: runId, model_id: selectedModel.id }),
-        })
-
-        if (!res.ok) {
-          const data = await res.json()
-          handleEnrichError(data.error ?? `Scoring failed (${res.status})`)
-          return
-        }
-
-        router.push(`/run/${runId}/results`)
-      } catch {
-        handleEnrichError('Network error — could not score contacts')
-      }
-      return
-    }
-
-    if (notifyEmail && status !== 'authenticated') {
-      try {
-        const dest = `/run/${runId}/score`
-        document.cookie = `auth_next=${encodeURIComponent(dest)}; path=/; max-age=600; SameSite=Lax`
-        const result = await signIn('resend', {
-          email:       notifyEmail,
-          redirect:    false,
-          callbackUrl: `/auth/confirmed?next=${encodeURIComponent(dest)}`,
-        })
-        if (!result?.error) {
-          setStage('link-sent')
-          return
-        }
-      } catch { /* fall through to normal redirect on error */ }
-    }
-
-    router.push(`/run/${runId}/score`)
-  }
-
-  const handleModelSelect = (model: { id: string; name: string }) => {
-    setSelectedModel(model)
-  }
-
-  const clearModel = () => {
-    setSelectedModel(null)
-  }
-
-  // -- Magic-link sent (non-logged-in notify-me flow) -------------------------
-  if (stage === 'link-sent' && notifyEmail) {
+  // -- Enrichment submitted ---------------------------------------------------
+  if (stage === 'submitted' && submittedEmail) {
     return (
       <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={null} />
+        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
         <div className="flex items-center justify-center px-4 py-24">
-          <div className="w-full max-w-sm text-center">
-            <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <h1 className="text-lg font-semibold text-gray-900 mb-1">Check your inbox</h1>
-            <p className="text-sm text-gray-500">
-              Enrichment complete! We sent a sign-in link to{' '}
-              <span className="font-medium text-gray-700">{notifyEmail}</span>.
-              Click it to score your contacts.
-            </p>
-            <p className="mt-4 text-xs text-gray-400">
-              Didn&apos;t receive it?{' '}
-              <button
-                onClick={() => { setStage('upload'); setNotifyEmail(null); setConfirmed(null) }}
-                className="text-blue-600 hover:underline"
-              >
-                Start over
-              </button>
-            </p>
-          </div>
+          <EnrichmentSubmitted
+            notifyEmail={submittedEmail}
+            onStartAnother={resetToUpload}
+          />
         </div>
       </main>
     )
   }
 
-  // -- Pre-enrichment choice --------------------------------------------------
-  if (stage === 'choose' && confirmed) {
+  // -- Confirm screen --------------------------------------------------------
+  if (stage === 'confirm' && confirmed) {
     return (
       <main className="min-h-screen bg-gray-50">
         <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
         <div className="flex items-center justify-center px-4 py-16">
           <div className="w-full max-w-lg">
-            <EnrichmentChoice
-              filename={confirmed.original_filename}
-              onStartNow={() => setStage('enriching')}
-              onNotifyMe={(email) => { setNotifyEmail(email); setStage('enriching') }}
-              initialEmail={session?.user?.email ?? undefined}
-            />
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  // -- Enrichment in progress -------------------------------------------------
-  if (stage === 'enriching' && confirmed) {
-    return (
-      <main className="min-h-screen bg-gray-50">
-        <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} orgName={session?.user?.orgName ?? null} role={session?.user?.role ?? null} />
-        <div className="flex items-center justify-center px-4 py-16">
-          <div className="w-full max-w-md">
-            <EnrichmentProgress
-              blobUrl={confirmed.blob_url}
-              linkedinColumn={confirmed.linkedin_column}
-              originalFilename={confirmed.original_filename}
-              name={enrichmentName}
-              notifyEmail={notifyEmail ?? undefined}
-              onComplete={handleEnrichComplete}
-              onError={handleEnrichError}
-              currentPlan={session?.user?.plan ?? 'free'}
-            />
-            {scoring && (
-              <div className="mt-4 text-center">
-                <div className="w-6 h-6 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-xs text-gray-500">
-                  Scoring with <span className="font-medium text-gray-700">{selectedModel?.name}</span>...
-                </p>
+            {enrichError && (
+              <div className="mb-4 flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                <svg className="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                </svg>
+                <p className="text-sm text-red-700 flex-1">{enrichError}</p>
+                <button onClick={() => setEnrichError(null)} className="text-red-400 hover:text-red-600">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             )}
+            <EnrichmentConfirm
+              filename={confirmed.original_filename}
+              initialEmail={userEmail ?? undefined}
+              onSubmit={handleSubmit}
+            />
           </div>
         </div>
+        {showRunLimit && (
+          <UpgradeModal
+            trigger="You've used all 5 free enrichments"
+            requiredPlan="starter"
+            isOpen
+            onClose={() => setShowRunLimit(false)}
+            currentPlan={(session?.user?.plan ?? 'free') as 'free' | 'starter' | 'pro' | 'enterprise'}
+          />
+        )}
       </main>
     )
   }
 
-  // -- Upload flow ------------------------------------------------------------
+  // -- Upload flow -----------------------------------------------------------
   return (
     <main className="min-h-screen bg-gray-50">
       <AppHeader userEmail={userEmail} plan={session?.user?.plan ?? null} />
@@ -188,29 +148,6 @@ export default function EnrichPage() {
           />
         </div>
 
-        {enrichError && (
-          <div className="mb-6">
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
-              <svg className="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-              </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-red-700">Enrichment failed</p>
-                <p className="text-xs text-red-600 mt-0.5">{enrichError}</p>
-              </div>
-              <button
-                onClick={() => setEnrichError(null)}
-                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
-                aria-label="Dismiss"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-
         {selectedModel && (
           <div className="mb-6">
             <div className="flex items-center justify-between gap-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
@@ -223,7 +160,7 @@ export default function EnrichPage() {
                 </p>
               </div>
               <button
-                onClick={clearModel}
+                onClick={() => setSelectedModel(null)}
                 className="shrink-0 text-xs text-blue-500 hover:text-blue-700 font-medium transition-colors"
               >
                 Clear
@@ -232,9 +169,9 @@ export default function EnrichPage() {
           </div>
         )}
 
-        <UploadForm onConfirmed={(data) => { setConfirmed(data); setStage('choose') }} />
+        <UploadForm onConfirmed={(data) => { setConfirmed(data); setStage('confirm') }} />
 
-        <SavedModels onSelect={handleModelSelect} />
+        <SavedModels onSelect={(model) => setSelectedModel(model)} />
       </div>
     </main>
   )

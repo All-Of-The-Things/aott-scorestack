@@ -60,23 +60,16 @@ prisma.user.findUnique({
 ```
 `plan` is read from `dbUser.org.plan` (defaults to `'free'` if no org).
 
-### Pre-enrichment notification (optional, non-blocking)
+### Enrichment notification (always on)
 
-`EnrichmentChoice` offers "Notify me by email" for users who want to close the tab:
-- Email input captured in the UI; sent as `notify_email` in the `POST /api/enrich` body → stored as `Run.notifyEmail`
-- On enrichment completion, if `Run.notifyEmail` is set and `EnrichmentNotification` row does not exist:
-  - Call `sendEnrichmentComplete(email, runId)` — sends single-CTA sign-in email: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:runId/score`
-  - Create `EnrichmentNotification { runId, email, sentAt: now() }` to prevent duplicate sends
+All enrichments are asynchronous. `notify_email` is always collected before enrichment starts (pre-filled from session if authenticated) and is required in the `POST /api/enrich` body.
 
-**In-browser completion (browser still open, user not authenticated):**
-- When enrichment SSE `complete` event fires and `notifyEmail` is set and `status !== 'authenticated'`:
-  - Client sets `auth_next` cookie to `/run/:runId/score`
-  - Client calls `signIn('resend', { email: notifyEmail, redirect: false, callbackUrl: '/auth/confirmed' })`
-  - On success: transitions to `link-sent` stage — shows "Check your inbox" screen with `notifyEmail` displayed
-  - No second email prompt — the email the user entered in `EnrichmentChoice` is reused
-- If `signIn` fails: fall through to `router.push('/run/:runId/score')` (unauthenticated → sign-in redirect)
+- `notify_email` is stored as `Run.notifyEmail` at run creation
+- `sendEnrichmentStarted(email, runId, totalContacts)` fires immediately after the Inngest job is triggered, giving the user a link before they navigate away
+- On enrichment completion the Inngest function calls `sendEnrichmentComplete(email, runId)` — sends single-CTA sign-in email: **"Sign in to view your results →"** → `/auth/signin?callbackUrl=/run/:runId/score`
+- `EnrichmentNotification { runId, email, sentAt: now() }` is created after send to prevent duplicate sends on Inngest retries
 
-**If already signed in when clicking notify-me email link:** `/auth/signin` server component redirects directly to `callbackUrl`, bypassing the confirmation page.
+**If already signed in when clicking notification email link:** `/auth/signin` server component redirects directly to `callbackUrl`, bypassing the confirmation page.
 
 ### List models (`GET /api/models`)
 
@@ -100,20 +93,30 @@ Results page always has a session by design. `SaveModelButton` only renders in a
 
 ### Enrichment rules
 
-1. `POST /api/enrich` creates the `Run` row and begins enrichment. No auth required.
-2. If the request body includes `notify_email`, store it in `Run.notifyEmail` at run creation. The client can safely navigate away once the SSE `started` event is received.
-3. On enrichment completion:
-   - Update `Run.status = 'scoring'`, `Run.enrichedCount`, `Run.failedCount`
-   - If `Run.notifyEmail` is set and `EnrichmentNotification` row does not exist:
-     - Call `sendEnrichmentComplete(email, runId)` — sends single-CTA sign-in email
-     - Create `EnrichmentNotification { runId, email, sentAt: now() }` to prevent duplicate sends
-   - Send SSE `{ type: 'complete', run_id: runId }` → close stream
-4. `GET /api/runs/:runId/status` lightweight polling. Returns `{ status, enrichedCount, failedCount, totalContacts }`. No auth required.
+Enrichment is fully asynchronous — no SSE streaming. The HTTP request that starts enrichment returns in under 200ms.
+
+1. `POST /api/enrich` — no auth required:
+   - Runs quota check (free plan run limit)
+   - Creates `Run` row: status `pending`, stores `blobUrl`, `linkedinColumn`, `notifyEmail`, `name`, `userId`, `orgId`
+   - Fires `sendEnrichmentStarted(notifyEmail, runId, 0)` (contact count not yet known)
+   - Triggers Inngest event `enrich/contacts.requested` with `{ runId }`
+   - Returns `{ run_id: string }` JSON immediately
+2. **Inngest `enrich-contacts` function** (runs outside Vercel timeout):
+   - Updates `Run.status = 'enriching'`
+   - Fetches blob from Vercel Blob using stored `Run.blobUrl`
+   - Parses CSV, extracts LinkedIn URLs from `Run.linkedinColumn`
+   - Applies free-plan quota cap before loop begins (truncate rows, update `Run.totalContacts`)
+   - Enriches contacts sequentially via `fetchProfile()`; writes one `RunResult` row per contact as it completes (enables partial result availability)
+   - On provider-level abort: updates `Run.status = 'failed'`; stops loop
+   - On loop completion: updates `Run.status = 'scoring'`, `Run.enrichedCount`, `Run.failedCount`, `Run.avgEnrichmentMs`, `Run.totalEnrichmentMs`; creates `UsageLog` if `orgId` present
+   - Sends completion email (deduped via `EnrichmentNotification`)
+3. `GET /api/runs/:runId/status` — no auth required. Returns `{ status, enrichedCount, failedCount, totalContacts, completedAt }`.
 
 ### Polling behaviour (client)
-- When a user navigates to `/run/:runId` while `status === 'enriching'`, the page polls `/api/runs/:runId/status` every 5 seconds.
-- When `status === 'complete'`, the page redirects to `/run/:runId/score`.
-- A progress spinner with "Still enriching… X / Y contacts processed" is shown during polling.
+- After submission the client navigates to the "Enrichment submitted" confirmation screen and may then go to `/runs` list.
+- `/run/:runId` detail page polls `/api/runs/:runId/status` every 5 seconds while `status` is `pending` or `enriching`.
+- Partial results (any `RunResult` rows already written) can be displayed once they exist.
+- When `status === 'scoring'`, the page shows a "Ready to score →" CTA to `/run/:runId/score`.
 
 ---
 

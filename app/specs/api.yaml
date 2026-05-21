@@ -39,28 +39,37 @@ paths:
   /api/enrich:
     post:
       tags: [Enrichment]
-      summary: Enrich contacts from uploaded CSV (SSE stream)
+      summary: Start async enrichment from uploaded CSV
       description: |
-        Checks quota before starting. If quota exceeded, returns 402.
-        If Run.notifyEmail is provided, enrichment continues async and sends email on completion.
-        SSE events: { type: 'progress', contact, status } and { type: 'complete', runId }
+        Creates a Run record, stores blobUrl + linkedinColumn, fires a start email,
+        triggers the Inngest enrich-contacts background job, and returns immediately.
+        Enrichment runs entirely outside Vercel's function timeout via Inngest.
+        Poll GET /api/runs/{runId}/status to track progress.
+        Checks free-plan run limit before starting; returns 402 if exceeded.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [blob_url, linkedin_column, original_filename]
+              required: [blob_url, linkedin_column, original_filename, notify_email]
               properties:
-                blob_url:        { type: string }
-                linkedin_column: { type: string }
+                blob_url:          { type: string }
+                linkedin_column:   { type: string }
                 original_filename: { type: string }
-                notify_email:    { type: string, format: email, description: "Optional. If provided, user can navigate away and receive email on completion." }
+                notify_email:      { type: string, format: email, description: "Required. Email address to notify when enrichment completes." }
+                name:              { type: string, description: "Optional display name for this enrichment run." }
       responses:
         '200':
-          description: SSE stream (text/event-stream)
+          description: Enrichment job accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id: { type: string }
         '402':
-          description: Quota exceeded
+          description: Free plan run limit reached
           content:
             application/json:
               schema:
@@ -69,7 +78,7 @@ paths:
   /api/runs/{runId}/status:
     get:
       tags: [Enrichment]
-      summary: Poll run status (for deferred enrichment)
+      summary: Poll run status
       parameters:
         - name: runId
           in: path

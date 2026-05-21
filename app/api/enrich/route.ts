@@ -3,85 +3,45 @@ import { z } from 'zod'
 import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
 import { getPlanLimitsFor } from '@/app/lib/quota'
-import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
-import { parseCSV } from '@/app/lib/csv'
-import { fetchProfile } from '@/app/lib/linkedapi'
-import { sendEnrichmentComplete, sendEnrichmentStarted } from '@/app/lib/notify'
-import { InputJsonObject } from '@prisma/client/runtime/client'
-import { get } from '@vercel/blob'
-
-export const maxDuration = 800 // 15 minutes in seconds (vercel.json caps at 600)
+import { RunStatus } from '@/app/generated/prisma'
+import { sendEnrichmentStarted } from '@/app/lib/notify'
+import { inngest } from '@/app/lib/inngest'
 
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
 const EnrichBodySchema = z.object({
-  blob_url: z.string().url(),
-  linkedin_column: z.string().min(1),
+  blob_url:          z.string().url(),
+  linkedin_column:   z.string().min(1),
   original_filename: z.string().default('upload.csv'),
-  notify_email: z.string().email().optional(),
-  name: z.string().optional(),
+  notify_email:      z.string().email(),
+  name:              z.string().optional(),
 })
-
-// ---------------------------------------------------------------------------
-// SSE helpers
-// ---------------------------------------------------------------------------
-
-function sseMessage(data: object): string {
-  return `data: ${JSON.stringify(data)}\n\n`
-}
 
 // ---------------------------------------------------------------------------
 // POST /api/enrich
 //
-// Accepts:
-//   { blob_url: string, linkedin_column: string, original_filename?: string }
-//
-// Steps:
-//   1. Validate request body
-//   2. Create a `runs` record with status 'enriching'
-//   3. Fetch the CSV from Vercel Blob (blob_url)
-//   4. Parse CSV with parseCSV(), extract LinkedIn URLs from linkedin_column
-//   5. For each URL:
-//      a. Call fetchProfile() from lib/linkedapi.ts
-//      b. Insert a run_results row with enriched_data or enrichment_status: 'failed'
-//      c. Stream SSE event: { type: 'progress', current, total, contact_name }
-//   6. Update runs.status → 'scoring', runs.enriched_count, runs.failed_count
-//   7. Stream final SSE event: { type: 'complete', run_id }
-//
-// Streaming:
-//   Uses ReadableStream with Server-Sent Events (text/event-stream).
-//   The client should listen with EventSource on a wrapping fetch (EventSource
-//   does not support POST — use a fetch + ReadableStream reader on the client).
-//
-// LinkedAPI integration:
-//   fetchProfile() uses the @linkedapi/node SDK (fetchPerson workflow).
-//   The SDK handles auth, retries, and polling internally.
-//   Calls are sequential to respect LinkedAPI rate limits.
+// Creates a Run record, triggers the Inngest enrich-contacts background job,
+// and returns { run_id } immediately. Enrichment runs outside Vercel's timeout.
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
-  // Parse + validate body
   let body: z.infer<typeof EnrichBodySchema>
   try {
     const raw = await request.json()
     body = EnrichBodySchema.parse(raw)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Invalid request body'
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    })
+    return Response.json({ error: message }, { status: 400 })
   }
 
   const { blob_url, linkedin_column, original_filename, notify_email, name } = body
 
-  // Resolve auth context before streaming so quota checks have access
   const session = await auth()
-  const userId  = session?.user?.id    ?? null
-  const orgId   = session?.user?.orgId ?? null
-  const plan    = (session?.user?.plan ?? 'free') as string
+  const userId = session?.user?.id    ?? null
+  const orgId  = session?.user?.orgId ?? null
+  const plan   = (session?.user?.plan ?? 'free') as string
 
   const limits = await getPlanLimitsFor(orgId ? plan : 'free')
 
@@ -91,250 +51,49 @@ export async function POST(request: NextRequest) {
       where: { orgId, status: { in: ['enriching', 'scoring', 'complete'] } },
     })
     if (runCount >= 5) {
-      return new Response(JSON.stringify({ error: 'run_limit_reached' }), {
-        status: 402,
-        headers: { 'Content-Type': 'application/json' },
-      })
+      return Response.json({ error: 'run_limit_reached' }, { status: 402 })
     }
   }
 
-  // Set up SSE stream
-  const encoder = new TextEncoder()
-  const stream = new ReadableStream({
-    async start(controller) {
-      // Track whether the client is still connected. When the user navigates
-      // away (ECONNRESET / abort), send() becomes a no-op but enrichment
-      // continues in the background so the notify-me email still fires.
-      let clientConnected = true
-      request.signal.addEventListener('abort', () => { clientConnected = false })
+  // Create run record
+  let runId: string
+  try {
+    const run = await prisma.run.create({
+      data: {
+        name:             name ?? null,
+        originalFilename: original_filename,
+        blobUrl:          blob_url,
+        linkedinColumn:   linkedin_column,
+        status:           RunStatus.pending,
+        totalContacts:    0,
+        enrichedCount:    0,
+        failedCount:      0,
+        notifyEmail:      notify_email,
+        ...(userId ? { userId } : {}),
+        ...(orgId  ? { orgId  } : {}),
+      },
+    })
+    runId = run.id
+  } catch (err) {
+    console.error('[enrich] Failed to create run:', err)
+    return Response.json({ error: 'Failed to create enrichment run.' }, { status: 500 })
+  }
 
-      const send = (data: object) => {
-        if (!clientConnected) return
-        try {
-          controller.enqueue(encoder.encode(sseMessage(data)))
-        } catch {
-          clientConnected = false
-        }
-      }
+  // Fire start notification email
+  try {
+    await sendEnrichmentStarted(notify_email, runId, 0)
+  } catch (err) {
+    console.error('[enrich] Failed to send start email:', err)
+  }
 
-      const closeStream = () => {
-        if (!clientConnected) return
-        try { controller.close() } catch { /* already closed */ }
-      }
+  // Trigger background enrichment via Inngest
+  try {
+    await inngest.send({ name: 'enrich/contacts.requested', data: { runId } })
+  } catch (err) {
+    console.error('[enrich] Failed to trigger Inngest event:', err)
+    await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
+    return Response.json({ error: 'Failed to start enrichment job.' }, { status: 500 })
+  }
 
-      // Create run record
-      let runId: string
-      try {
-        const run = await prisma.run.create({
-          data: {
-            name: name ?? null,
-            originalFilename: original_filename,
-            status: RunStatus.enriching,
-            totalContacts: 0,
-            enrichedCount: 0,
-            failedCount: 0,
-            ...(notify_email ? { notifyEmail: notify_email } : {}),
-            ...(userId ? { userId } : {}),
-            ...(orgId  ? { orgId  } : {}),
-          },
-        })
-        runId = run.id
-      } catch (err) {
-        console.error('Error creating run record:', err)
-        send({ type: 'error', message: 'Something went wrong. Please try again.' })
-        closeStream()
-        return
-      }
-
-      // Send run_id to the client immediately so the "Notify me" option can appear
-      send({ type: 'started', run_id: runId })
-
-      // Fetch CSV from Vercel Blob
-      let csvText: string
-      try {
-        const blob = await get(blob_url, {
-          access: 'private',
-          token: process.env.BLOB_READ_WRITE_TOKEN ?? process.env.VERCEL_BLOB_TOKEN,
-        })
-        
-        if (!(blob?.statusCode === 200)) {
-          throw new Error(`Blob fetch failed: ${blob?.statusCode}`)
-        }
-
-        csvText = await new Response(blob.stream).text()
-      } catch (err) {
-        console.error('[enrich] Blob fetch failed:', err)
-        await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
-        send({ type: 'error', message: "We couldn't load your file. Please try uploading it again." })
-        closeStream()
-        return
-      }
-
-      // Parse CSV
-      let rows: Record<string, string>[]
-      try {
-        const parsed = parseCSV(csvText)
-        rows = parsed.rows
-      } catch (err) {
-        console.error('[enrich] CSV parse failed:', err)
-        await prisma.run.update({ where: { id: runId }, data: { status: RunStatus.failed } })
-        send({ type: 'error', message: "Your file couldn't be read. Make sure it's a valid CSV." })
-        closeStream()
-        return
-      }
-
-      // Record original count before any quota truncation
-      await prisma.run.update({
-        where: { id: runId },
-        data: { totalContacts: rows.length, originalTotalContacts: rows.length },
-      })
-
-      // -----------------------------------------------------------------------
-      // Quota enforcement
-      // -----------------------------------------------------------------------
-
-      const isFree = !orgId || plan === 'free'
-
-      if (isFree) {
-        if (limits.runLimit !== -1 && rows.length > limits.runLimit) {
-          const original = rows.length
-          rows = rows.slice(0, limits.runLimit)
-          await prisma.run.update({ where: { id: runId }, data: { totalContacts: rows.length } })
-          send({ type: 'capped', original, capped_to: limits.runLimit })
-        }
-      }
-      // Subscribed plans (starter / pro / enterprise) enrich freely —
-      // the monthly subscription covers enrichment, no credit balance required.
-
-      // Send enrichment-started email so the user has a link before navigating away
-      if (notify_email) {
-        try {
-          await sendEnrichmentStarted(notify_email, runId, rows.length)
-        } catch (err) {
-          console.error('[enrich] Failed to send start email:', err)
-        }
-      }
-
-      let enrichedCount = 0
-      let failedCount = 0
-      let cumulativeMs = 0
-      const enrichmentStart = Date.now()
-
-      // Enrich each contact sequentially
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]!
-        const linkedinUrl = (row[linkedin_column] ?? '').trim()
-
-        const contactStart = Date.now()
-        const result = await fetchProfile(linkedinUrl)
-        const contactMs = Date.now() - contactStart
-        cumulativeMs += contactMs
-
-        const completed = i + 1
-        const avgMsPerContact = Math.round(cumulativeMs / completed)
-        const estimatedRemainingMs = avgMsPerContact * (rows.length - completed)
-
-        const contactName =
-          (result.profile?.full_name ??
-          result.profile?.first_name ??
-          linkedinUrl) ||
-          `Row ${i + 1}`
-
-        // Hard-stop: provider-level failure — no further contacts will succeed
-        if (result.abort) {
-          await prisma.run.update({
-            where: { id: runId },
-            data: { status: RunStatus.failed, enrichedCount, failedCount },
-          })
-          send({ type: 'provider_error', code: result.abortCode ?? 'provider_unavailable' })
-          closeStream()
-          return
-        }
-
-        // Persist run_result row
-        await prisma.runResult.create({
-          data: {
-            runId,
-            rowIndex: i,
-            linkedinUrl: linkedinUrl || `row_${i}`,
-            enrichedData: result.profile as unknown as InputJsonObject ?? undefined,
-            enrichmentStatus: result.status as EnrichmentStatus,
-          },
-        })
-
-        if (result.status === 'success') {
-          enrichedCount++
-        } else {
-          failedCount++
-        }
-
-        send({
-          type: 'progress',
-          current: completed,
-          total: rows.length,
-          contact_name: contactName,
-          enrichment_status: result.status,
-          avg_ms_per_contact: avgMsPerContact,
-          estimated_remaining_ms: estimatedRemainingMs,
-        })
-      }
-
-      const totalEnrichmentMs = Date.now() - enrichmentStart
-      const avgEnrichmentMs = rows.length > 0
-        ? Math.round(cumulativeMs / rows.length)
-        : 0
-
-
-      // Finalize run
-      await prisma.run.update({
-        where: { id: runId },
-        data: {
-          status: RunStatus.scoring,
-          enrichedCount,
-          failedCount,
-          avgEnrichmentMs,
-          totalEnrichmentMs,
-        },
-      })
-
-      // Record usage for org-owned runs
-      if (orgId) {
-        await prisma.usageLog.create({
-          data: {
-            orgId,
-            runId,
-            contactsConsumed: enrichedCount,
-            enrichmentSource: 'managed_credits',
-          },
-        })
-      }
-
-      // Send enrichment completion email if the user chose "notify me"
-      if (notify_email) {
-        try {
-          const alreadySent = await prisma.enrichmentNotification.findUnique({ where: { runId } })
-          if (!alreadySent) {
-            await sendEnrichmentComplete(notify_email, runId)
-            await prisma.enrichmentNotification.create({
-              data: { runId, email: notify_email, sentAt: new Date() },
-            })
-          }
-        } catch (err) {
-          console.error('[enrich] Failed to send completion email:', err)
-          // Non-fatal — enrichment still completes normally
-        }
-      }
-
-      send({ type: 'complete', run_id: runId })
-      closeStream()
-    },
-  })
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    },
-  })
+  return Response.json({ run_id: runId })
 }
