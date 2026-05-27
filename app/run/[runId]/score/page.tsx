@@ -60,6 +60,11 @@ export default async function ScorePage({ params }: ScorePageProps) {
     })
   }
 
+  const ownsRun =
+    (run.orgId  && run.orgId  === session.user.orgId) ||
+    (run.userId && run.userId === session.user.id)
+  if (!ownsRun) notFound()
+
   if (run.status === 'enriching') {
     return (
       <>

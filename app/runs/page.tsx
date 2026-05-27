@@ -25,10 +25,13 @@ export default async function RunsPage() {
   const orgId  = session.user?.orgId
 
   // Claim orphaned notify-me runs whose email matches the now-authenticated user
-  if (session.user.email && orgId) {
+  if (session.user.email) {
     await prisma.run.updateMany({
       where: { notifyEmail: session.user.email, orgId: null, userId: null },
-      data:  { orgId, userId },
+      data: {
+        ...(userId ? { userId } : {}),
+        ...(orgId  ? { orgId  } : {}),
+      },
     })
   }
 
