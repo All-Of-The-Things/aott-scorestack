@@ -79,6 +79,13 @@ export default async function ResultsPage({ params, searchParams }: ResultsPageP
     })
   }
 
+  if (session) {
+    const ownsRun =
+      (run.orgId  && run.orgId  === session.user.orgId) ||
+      (run.userId && run.userId === session.user.id)
+    if (!ownsRun) notFound()
+  }
+
   if (!session) {
     const signInUrl = `/auth/signin?callbackUrl=/run/${runId}/results`
     return (
