@@ -3,7 +3,7 @@ import prisma from '@/app/lib/prisma'
 import { RunStatus, EnrichmentStatus } from '@/app/generated/prisma'
 import { parseCSV } from '@/app/lib/csv'
 import { fetchProfile } from '@/app/lib/linkedapi'
-import { sendEnrichmentComplete } from '@/app/lib/notify'
+import { sendEnrichmentStarted, sendEnrichmentComplete } from '@/app/lib/notify'
 import { get } from '@vercel/blob'
 import { InputJsonObject } from '@prisma/client/runtime/client'
 
@@ -78,6 +78,14 @@ export const enrichContacts = inngest.createFunction(
       where: { id: runId },
       data: { totalContacts: rows.length, originalTotalContacts: rows.length },
     })
+
+    if (run.notifyEmail) {
+      try {
+        await sendEnrichmentStarted(run.notifyEmail, runId, rows.length)
+      } catch (err) {
+        console.error('[inngest/enrich] Failed to send start email:', err)
+      }
+    }
 
     let enrichedCount = 0
     let failedCount = 0

@@ -4,7 +4,6 @@ import prisma from '@/app/lib/prisma'
 import { auth } from '@/app/lib/auth'
 import { getPlanLimitsFor } from '@/app/lib/quota'
 import { RunStatus } from '@/app/generated/prisma'
-import { sendEnrichmentStarted } from '@/app/lib/notify'
 import { inngest } from '@/app/lib/inngest'
 
 // ---------------------------------------------------------------------------
@@ -77,13 +76,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[enrich] Failed to create run:', err)
     return Response.json({ error: 'Failed to create enrichment run.' }, { status: 500 })
-  }
-
-  // Fire start notification email
-  try {
-    await sendEnrichmentStarted(notify_email, runId, 0)
-  } catch (err) {
-    console.error('[enrich] Failed to send start email:', err)
   }
 
   // Trigger background enrichment via Inngest
