@@ -87,6 +87,8 @@ export const enrichContacts = inngest.createFunction(
       }
     }
 
+    console.log(`[enrich] run=${runId} starting — ${rows.length} contacts`)
+
     let enrichedCount = 0
     let failedCount = 0
     let cumulativeMs = 0
@@ -98,10 +100,14 @@ export const enrichContacts = inngest.createFunction(
 
       const contactStart = Date.now()
       const result = await fetchProfile(linkedinUrl)
-      cumulativeMs += Date.now() - contactStart
+      const contactElapsedMs = Date.now() - contactStart
+      cumulativeMs += contactElapsedMs
+
+      console.log(`[enrich] run=${runId} [${i + 1}/${rows.length}] ${linkedinUrl || '(missing)'} → ${result.status} (${contactElapsedMs}ms)`)
 
       // Hard-stop: provider-level failure — no further contacts will succeed
       if (result.abort) {
+        console.log(`[enrich] run=${runId} ABORT at [${i + 1}/${rows.length}] code=${result.abortCode ?? 'unknown'}`)
         await prisma.run.update({
           where: { id: runId },
           data: { status: RunStatus.failed, enrichedCount, failedCount },
@@ -125,6 +131,8 @@ export const enrichContacts = inngest.createFunction(
 
     const totalEnrichmentMs = Date.now() - enrichmentStart
     const avgEnrichmentMs = rows.length > 0 ? Math.round(cumulativeMs / rows.length) : 0
+
+    console.log(`[enrich] run=${runId} done — enriched=${enrichedCount} failed=${failedCount} total=${totalEnrichmentMs}ms avg=${avgEnrichmentMs}ms/contact`)
 
     await prisma.run.update({
       where: { id: runId },
