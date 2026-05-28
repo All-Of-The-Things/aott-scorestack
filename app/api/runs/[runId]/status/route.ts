@@ -29,8 +29,7 @@ export async function GET(
   const profile = lastResult?.enrichedData as Record<string, unknown> | null
   const lastContactName =
     (profile?.full_name as string | null) ??
-    [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') ||
-    null
+    ([profile?.first_name, profile?.last_name].filter(Boolean).join(' ') || null)
 
   return NextResponse.json({
     ...run,
