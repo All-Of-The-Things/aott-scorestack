@@ -107,7 +107,8 @@ export default async function RunsPage() {
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-              <table className="w-full text-xs">
+              <div className="overflow-x-auto">
+              <table className="w-full text-xs table-fixed">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100 text-left text-gray-400 font-medium">
                     <th className="pl-6 pr-3 py-3">File</th>
@@ -128,9 +129,9 @@ export default async function RunsPage() {
                     return (
                       <tr key={run.id} className="hover:bg-gray-50/50 transition-colors">
                         {/* File name */}
-                        <td className="pl-6 pr-3 py-3.5 max-w-[220px]">
+                        <td className="pl-6 pr-3 py-3.5 w-full min-w-0">
                           <p className="font-medium text-gray-800 truncate">{run.name ?? run.originalFilename}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">{run.originalFilename} · {formatDate(run.createdAt)}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5 truncate">{run.originalFilename} · {formatDate(run.createdAt)}</p>
                         </td>
 
                         {/* Status */}
@@ -185,6 +186,7 @@ export default async function RunsPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

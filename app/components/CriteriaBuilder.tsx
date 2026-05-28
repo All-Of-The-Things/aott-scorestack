@@ -296,11 +296,12 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-[11px]">
+          <table className="w-full text-[11px] table-fixed">
             <thead>
               <tr className="border-b border-gray-100">
+                <th className="px-4 py-2 text-left font-medium text-gray-500">Name</th>
                 {Object.values(FIELD_LABELS).map((label) => (
-                  <th key={label} className="px-4 py-2 text-left font-medium text-gray-500 whitespace-nowrap">
+                  <th key={label} className="px-4 py-2 text-left font-medium text-gray-500">
                     {label}
                   </th>
                 ))}
@@ -309,11 +310,17 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
             <tbody>
               {enrichmentPreview.map((row, i) => (
                 <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-2">
+                    {row['full_name']
+                      ? <span className="text-xs font-medium text-gray-700 truncate block">{row['full_name']}</span>
+                      : <span className="text-gray-300">—</span>
+                    }
+                  </td>
                   {Object.keys(FIELD_LABELS).map((field) => (
-                    <td key={field} className="px-4 py-2 whitespace-nowrap max-w-[160px]">
+                    <td key={field} className="px-4 py-2">
                       {row[field]
                         ? FIELD_ALLOWED_VALUES[field]
-                          ? <span className="inline-flex text-[11px] font-medium px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700">{row[field]}</span>
+                          ? <span className="inline-flex text-[11px] font-medium px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-700 truncate max-w-full">{row[field]}</span>
                           : <span className="text-xs text-gray-700 truncate block">{row[field]}</span>
                         : <span className="text-gray-300">—</span>
                       }

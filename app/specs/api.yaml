@@ -91,11 +91,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  status:         { type: string, enum: [pending, enriching, scoring, complete, failed] }
-                  enrichedCount:  { type: integer }
-                  failedCount:    { type: integer }
-                  totalContacts:  { type: integer }
-                  completedAt:    { type: string, format: date-time, nullable: true }
+                  status:           { type: string, enum: [pending, enriching, scoring, complete, failed] }
+                  enrichedCount:    { type: integer }
+                  failedCount:      { type: integer }
+                  totalContacts:    { type: integer }
+                  processedCount:   { type: integer, description: "Contacts processed so far (for progress display while enriching)" }
+                  lastContactUrl:   { type: string, nullable: true, description: "LinkedIn URL of the most recently enriched contact" }
+                  lastContactName:  { type: string, nullable: true, description: "Display name of the most recently enriched contact" }
+                  completedAt:      { type: string, format: date-time, nullable: true }
 
   # ─── EXPORT ───────────────────────────────────────────────────────────────
 

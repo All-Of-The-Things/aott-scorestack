@@ -4,8 +4,8 @@
 **Command:** BUILD::IMPLEMENT  
 **Source specs:** `/ai/output/specs/`
 **Last replanned:** SPEC::REFINE + PLAN::ARCHITECTURE + PLAN::TASKS 2026-05-11 — Phase 11 (Team Management) architecture; OrgInvite model (dedicated, not VerificationToken); header nav split from breadcrumb (breadcrumb now in page content); tasks.md audit (T-07, T-08 removed, T-10, T-17, T-25, T-26–T-29 marked complete)  
-**Total tasks:** 57 + Phase 11 tasks across 12 phases  
-**Current phase:** Phase 11 (Team Management) — in progress (2026-05-11)
+**Total tasks:** 57 + Phase 11–13 tasks across 13 phases  
+**Current phase:** Phase 13 (Inngest Async Enrichment) — complete (2026-05-28)
 
 Phases must be executed in order. Each phase's output is a hard dependency for the next.
 
@@ -717,8 +717,8 @@ RESEND_FROM_EMAIL=noreply@scorestack.io
 LEMONSQUEEZY_API_KEY=
 LEMONSQUEEZY_WEBHOOK_SECRET=
 LEMONSQUEEZY_STORE_ID=
-LEMONSQUEEZY_STARTER_VARIANT_ID=      # $29/mo subscription variant
-LEMONSQUEEZY_PRO_VARIANT_ID=          # $49/mo subscription variant
+NEXT_PUBLIC_LEMONSQUEEZY_STARTER_VARIANT_ID=   # $29/mo subscription variant (NEXT_PUBLIC_ — browser bundle)
+NEXT_PUBLIC_LEMONSQUEEZY_PRO_VARIANT_ID=       # $49/mo subscription variant (NEXT_PUBLIC_ — browser bundle)
 
 # Credit pack one-time product IDs
 LEMONSQUEEZY_CREDITS_100_PRODUCT_ID=
