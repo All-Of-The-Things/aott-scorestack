@@ -87,17 +87,17 @@
     },
 
     "OrgIntegration": {
-      "description": "Encrypted BYOK credentials for LinkedAPI. One record per org. Used exclusively for LinkedIn message delivery — enrichment always uses platform credentials from env vars.",
+      "description": "Encrypted BYOK credentials for ConnectSafely. One record per org. Used exclusively for LinkedIn message delivery via the byok delivery identity — enrichment always uses platform credentials from env vars.",
       "fields": {
         "id": { "type": "String", "default": "cuid()", "primary_key": true },
         "orgId": { "type": "String", "unique": true, "foreign_key": "Organization.id", "on_delete": "Cascade" },
-        "linkedApiToken": { "type": "String", "description": "AES-256 encrypted LINKED_API_TOKEN value" },
-        "linkedApiIdToken": { "type": "String", "description": "AES-256 encrypted LINKED_API_ID_TOKEN value" },
-        "verifiedAt": { "type": "DateTime", "nullable": true, "description": "Set when a test profile fetch succeeds — confirms credentials are valid" },
+        "connectSafelyApiKey": { "type": "String", "nullable": true, "description": "AES-256 encrypted ConnectSafely API key for BYOK delivery" },
+        "connectSafelyVerifiedAt": { "type": "DateTime", "nullable": true, "description": "Set when a test profile fetch succeeds via ConnectSafely — confirms credentials are valid" },
+        "connectSafelyLastError": { "type": "String", "nullable": true, "description": "Last auth error message written on BYOK job abort (D-010)" },
         "createdAt": { "type": "DateTime", "default": "now()" },
         "updatedAt": { "type": "DateTime", "auto_update": true }
       },
-      "notes": "Never return raw encrypted values via API. Expose only { configured: true, verifiedAt } to the client."
+      "notes": "Never return raw encrypted values via API. Expose only { configured: true, connectSafelyVerifiedAt } to the client."
     },
 
     "CreditPurchase": {
@@ -195,6 +195,8 @@
         "completedAt": { "type": "DateTime", "nullable": true },
         "sentCount": { "type": "Int", "default": 0 },
         "failedCount": { "type": "Int", "default": 0 },
+        "deliveryIdentity": { "type": "String", "default": "platform_agent", "description": "platform_agent = ScoreStack's CS key (zero setup); byok = org's own CS key via OrgIntegration" },
+        "failureCode": { "type": "String", "nullable": true, "description": "Set on job failure — e.g. auth_error, rate_limit" },
         "createdAt": { "type": "DateTime", "default": "now()" }
       },
       "relations": {
@@ -246,6 +248,6 @@
   },
   "notes": {
     "enrichment": "All plans use platform LinkedAPI credentials. No per-org credential setup required for enrichment.",
-    "delivery": "LinkedIn message delivery requires BYOK — org must configure OrgIntegration with their own LinkedAPI account."
+    "delivery": "LinkedIn message delivery uses platform_agent by default (ScoreStack's ConnectSafely key — zero setup). Orgs on Pro may configure BYOK via OrgIntegration with their own ConnectSafely account for brand consistency."
   }
 }

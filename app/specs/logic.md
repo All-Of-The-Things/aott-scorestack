@@ -148,53 +148,53 @@ INSERT INTO "plan_limits" ("plan", "run_limit", "model_limit", "seat_limit") VAL
 
 ### Enrichment quota decision tree
 
-`POST /api/enrich` streams SSE — the HTTP response body starts before the row count is known. The quota check therefore happens **inside the SSE stream handler**, after CSV parse and before enrichment begins.
+`POST /api/enrich` returns `{ run_id }` JSON immediately (< 200ms). All quota logic runs inside the **Inngest `enrich-contacts` function**, outside the Vercel function timeout.
 
-Auth context (`userId`, `orgId`, `plan`) is resolved **before** the `ReadableStream` is created so the closure has access without a second DB round-trip.
+Auth context (`userId`, `orgId`, `plan`) is resolved in the HTTP handler and stored on the `Run` row before the Inngest event is fired, so the function has access without a second auth round-trip.
 
 ```
-POST /api/enrich  →  resolve auth context (userId, orgId, plan) before stream
+POST /api/enrich  →  resolve auth context (userId, orgId, plan)
   │
-  ├── SSE stream opens immediately
+  ├── 1. Validate request body
+  ├── 2. Create Run row (status: pending, stores userId + orgId + notifyEmail)
+  ├── 3. Fire sendEnrichmentStarted email
+  ├── 4. Trigger Inngest event enrich/contacts.requested { runId }
+  └── 5. Return { run_id } immediately
+        ↓
+  Inngest enrich-contacts function (runs async, outside Vercel timeout):
   │
-  ├── 1. Validate request body; create Run row (with userId + orgId if authed)
-  │        emit { type: 'started', run_id }
-  │
+  ├── 1. Update Run.status = 'enriching'
   ├── 2. Fetch + parse CSV from Vercel Blob
   │        Update Run.totalContacts = rows.length
   │        Update Run.originalTotalContacts = rows.length  ← persisted before any truncation
   │
-  ├── 3. Quota check:
+  ├── 3. Quota cap (free plan):
   │       isFree = (!orgId || plan === 'free')
   │
   │       FREE PATH — soft cap:
   │         If limits.runLimit !== -1 AND rows.length > limits.runLimit:
   │           rows = rows.slice(0, limits.runLimit)
   │           Update Run.totalContacts = rows.length  ← originalTotalContacts unchanged
-  │           Emit { type: 'capped', original, capped_to }
   │           Continue enrichment with truncated rows
   │
   │       PAID PATH (starter / pro / enterprise):
-  │         Monthly subscription covers enrichment — no credit balance check.
   │         Enrichment proceeds with all rows, no cap.
   │
-  ├── 4. Enrich contacts sequentially (SSE progress events)
+  ├── 4. Enrich contacts sequentially; write one RunResult per contact as it completes
   │
   └── 5. On completion:
-        a. Update Run.status = 'scoring', enrichedCount, failedCount
-        b. Send enrichment notification email if Run.notifyEmail set
-        c. Emit { type: 'complete', run_id }
+        a. Update Run.status = 'scoring', enrichedCount, failedCount, avgEnrichmentMs
+        b. Create UsageLog if orgId present
+        c. Send enrichment completion email (deduped via EnrichmentNotification)
 ```
 
 ### Cap feedback in the client
 
-`EnrichmentProgress` handles the free-plan cap SSE event:
+`EnrichmentProgress` polls `GET /api/runs/:runId/status` and derives cap state from DB fields:
 
-- **`capped` event** (free plan): sets module-local var `localCappedInfo` + React state `cappedInfo`. The local var is used (not React state) to avoid stale-closure issues inside the SSE handler. On `complete`, if `localCappedInfo` is set the component switches to step `'cap-notice'` instead of calling `onComplete`. A blocking amber panel shows the original vs. enriched counts with a "Continue to scoring →" CTA. Only then does `onComplete(runId)` fire and navigation proceed.
-
-Both surfaces derive cap state from **persisted DB data**:
-- `EnrichmentProgress`: uses `localCappedInfo` captured from the SSE stream (reflects `Run.originalTotalContacts` set server-side)
-- Score page: `wasCapped = run.originalTotalContacts > run.totalContacts` — always correct on direct links or refreshes
+- **Cap detection**: `wasCapped = run.originalTotalContacts > run.totalContacts`. This is always correct on direct links or refreshes, not dependent on in-flight state.
+- When `status === 'scoring'` and `wasCapped`, the component shows an amber cap-notice panel with original vs. enriched counts and a "Continue to scoring →" CTA before calling `onComplete(runId)`.
+- Score page also reads `wasCapped` directly from DB: `run.originalTotalContacts > run.totalContacts`.
 
 ### Limits by plan
 
