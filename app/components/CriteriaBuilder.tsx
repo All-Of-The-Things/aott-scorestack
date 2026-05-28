@@ -299,6 +299,7 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
           <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-gray-100">
+                <th className="px-4 py-2 text-left font-medium text-gray-500 whitespace-nowrap">Name</th>
                 {Object.values(FIELD_LABELS).map((label) => (
                   <th key={label} className="px-4 py-2 text-left font-medium text-gray-500 whitespace-nowrap">
                     {label}
@@ -309,6 +310,12 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
             <tbody>
               {enrichmentPreview.map((row, i) => (
                 <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-2 whitespace-nowrap max-w-[160px]">
+                    {row['full_name']
+                      ? <span className="text-xs font-medium text-gray-700 truncate block">{row['full_name']}</span>
+                      : <span className="text-gray-300">—</span>
+                    }
+                  </td>
                   {Object.keys(FIELD_LABELS).map((field) => (
                     <td key={field} className="px-4 py-2 whitespace-nowrap max-w-[160px]">
                       {row[field]

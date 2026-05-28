@@ -134,9 +134,15 @@ export default async function ScorePage({ params }: ScorePageProps) {
     .map((row) => {
       if (!row.enrichedData || typeof row.enrichedData !== 'object') return null
       const data = row.enrichedData as Record<string, unknown>
-      return Object.fromEntries(
-        Object.keys(SCOREABLE_FIELDS).map((field) => [field, (data[field] as string | null) ?? null])
-      ) as Record<string, string | null>
+      const fullName =
+        (data.full_name as string | null) ??
+        ([data.first_name, data.last_name].filter(Boolean).join(' ') || null)
+      return {
+        full_name: fullName,
+        ...Object.fromEntries(
+          Object.keys(SCOREABLE_FIELDS).map((field) => [field, (data[field] as string | null) ?? null])
+        ),
+      } as Record<string, string | null>
     })
     .filter((r): r is Record<string, string | null> => r !== null)
 

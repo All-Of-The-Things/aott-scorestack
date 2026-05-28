@@ -20,15 +20,22 @@ export async function GET(
     prisma.runResult.findFirst({
       where: { runId: params.runId },
       orderBy: { rowIndex: 'desc' },
-      select: { linkedinUrl: true },
+      select: { linkedinUrl: true, enrichedData: true },
     }),
   ])
 
   if (!run) return NextResponse.json({ error: 'Run not found' }, { status: 404 })
 
+  const profile = lastResult?.enrichedData as Record<string, unknown> | null
+  const lastContactName =
+    (profile?.full_name as string | null) ??
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(' ') ||
+    null
+
   return NextResponse.json({
     ...run,
     processedCount,
     lastContactUrl: lastResult?.linkedinUrl ?? null,
+    lastContactName,
   })
 }

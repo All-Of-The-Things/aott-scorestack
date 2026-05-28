@@ -8,6 +8,7 @@ interface StatusResponse {
   totalContacts: number
   processedCount: number
   lastContactUrl: string | null
+  lastContactName: string | null
 }
 
 interface PollSnapshot {
@@ -45,6 +46,7 @@ export default function EnrichingWait({ runId, totalContacts }: EnrichingWaitPro
 
   const [processedCount, setProcessedCount] = useState(0)
   const [lastContactUrl, setLastContactUrl] = useState<string | null>(null)
+  const [lastContactName, setLastContactName] = useState<string | null>(null)
   const [eta, setEta] = useState<string | null>(null)
 
   useEffect(() => {
@@ -62,6 +64,7 @@ export default function EnrichingWait({ runId, totalContacts }: EnrichingWaitPro
 
         setProcessedCount(data.processedCount)
         setLastContactUrl(data.lastContactUrl)
+        setLastContactName(data.lastContactName)
 
         const snapshot: PollSnapshot = { processedCount: data.processedCount, timestamp: Date.now() }
         snapshotsRef.current = [...snapshotsRef.current, snapshot].slice(-MAX_SNAPSHOTS)
@@ -112,12 +115,20 @@ export default function EnrichingWait({ runId, totalContacts }: EnrichingWaitPro
         </div>
 
         {/* Current contact */}
-        <p className="mt-3 text-[11px] font-mono text-gray-400 truncate">
-          {lastContactUrl
-            ? stripLinkedInHost(lastContactUrl)
-            : <span className="italic">Starting…</span>
-          }
-        </p>
+        <div className="mt-3 min-w-0">
+          {lastContactUrl ? (
+            <>
+              {lastContactName && (
+                <p className="text-xs font-medium text-gray-700 truncate">{lastContactName}</p>
+              )}
+              <p className="text-[11px] font-mono text-gray-400 truncate">
+                {stripLinkedInHost(lastContactUrl)}
+              </p>
+            </>
+          ) : (
+            <p className="text-[11px] text-gray-400 italic">Starting…</p>
+          )}
+        </div>
 
         {/* ETA */}
         <p className="mt-3 text-[11px] text-gray-400">
