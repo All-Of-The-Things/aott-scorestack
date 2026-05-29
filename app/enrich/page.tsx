@@ -17,7 +17,8 @@ export default function EnrichPage() {
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const [showRunLimit, setShowRunLimit] = useState(false)
   const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
-  const [storedCompanyUrl, setStoredCompanyUrl] = useState<string | null>(null)
+  const [companyLinkedInUrl, setCompanyLinkedInUrl] = useState('')
+  const [showUpgradeCompany, setShowUpgradeCompany] = useState(false)
   const [enrichmentName, setEnrichmentName] = useState(() => {
     const now = new Date()
     return `Data enrichment - ${now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
@@ -30,12 +31,12 @@ export default function EnrichPage() {
     fetch('/api/org')
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
-        if (data?.companyLinkedInUrl) setStoredCompanyUrl(data.companyLinkedInUrl)
+        if (data?.companyLinkedInUrl) setCompanyLinkedInUrl(data.companyLinkedInUrl)
       })
       .catch(() => {})
   }, [status])
 
-  const handleSubmit = async (email: string, companyLinkedInUrl: string | null) => {
+  const handleSubmit = async (email: string) => {
     if (!confirmed) return
 
     try {
@@ -48,7 +49,7 @@ export default function EnrichPage() {
           original_filename:    confirmed.original_filename,
           notify_email:         email,
           name:                 enrichmentName,
-          company_linkedin_url: companyLinkedInUrl ?? undefined,
+          company_linkedin_url: companyLinkedInUrl.trim() || undefined,
           ...(selectedModel ? { model_id: selectedModel.id } : {}),
         }),
       })
@@ -122,8 +123,6 @@ export default function EnrichPage() {
               filename={confirmed.original_filename}
               initialEmail={userEmail ?? undefined}
               onSubmit={handleSubmit}
-              plan={(session?.user?.plan ?? 'free') as 'free' | 'starter' | 'pro' | 'enterprise'}
-              storedCompanyUrl={storedCompanyUrl}
             />
           </div>
         </div>
@@ -150,16 +149,82 @@ export default function EnrichPage() {
         <div className="mb-8">
           <h1 className="text-lg font-semibold text-gray-900 mb-1">New enrichment</h1>
           <p className="text-sm text-gray-500 mb-5">Upload a CSV of LinkedIn profiles to enrich and score your contacts.</p>
-          <label className="block text-xs font-medium text-gray-600 mb-1.5" htmlFor="enrichment-name">
-            Enrichment name
-          </label>
-          <input
-            id="enrichment-name"
-            type="text"
-            value={enrichmentName}
-            onChange={(e) => setEnrichmentName(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
-          />
+
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+            {/* Enrichment name */}
+            <div className="flex-1 min-w-0">
+              <label className="block text-xs font-medium text-gray-600 mb-1.5" htmlFor="enrichment-name">
+                Enrichment name
+              </label>
+              <input
+                id="enrichment-name"
+                type="text"
+                value={enrichmentName}
+                onChange={(e) => setEnrichmentName(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white"
+              />
+            </div>
+
+            {/* Company LinkedIn URL */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <label
+                  htmlFor="company-linkedin-url"
+                  className={[
+                    'block text-xs font-medium',
+                    (session?.user?.plan ?? 'free') === 'free' ? 'text-gray-400' : 'text-gray-600',
+                  ].join(' ')}
+                >
+                  Your company LinkedIn page
+                </label>
+                <span className="text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">
+                  Starter+
+                </span>
+                <span className="text-[10px] text-gray-400">(optional)</span>
+              </div>
+              <div className="relative">
+                <input
+                  id="company-linkedin-url"
+                  type="url"
+                  placeholder="https://linkedin.com/company/…"
+                  value={companyLinkedInUrl}
+                  onChange={(e) => {
+                    if ((session?.user?.plan ?? 'free') !== 'free') setCompanyLinkedInUrl(e.target.value)
+                  }}
+                  onClick={() => {
+                    if ((session?.user?.plan ?? 'free') === 'free') setShowUpgradeCompany(true)
+                  }}
+                  readOnly={(session?.user?.plan ?? 'free') === 'free'}
+                  className={[
+                    'w-full px-3 py-2 text-sm border rounded-lg focus:outline-none transition-shadow bg-white',
+                    (session?.user?.plan ?? 'free') === 'free'
+                      ? 'border-gray-100 text-gray-400 cursor-pointer bg-gray-50/60'
+                      : 'border-gray-200 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400',
+                  ].join(' ')}
+                />
+                {(session?.user?.plan ?? 'free') === 'free' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowUpgradeCompany(true)}
+                    className="absolute inset-0 w-full h-full rounded-lg"
+                    aria-label="Upgrade to use company context"
+                  />
+                )}
+                {companyLinkedInUrl && (session?.user?.plan ?? 'free') !== 'free' && (
+                  <button
+                    type="button"
+                    onClick={() => setCompanyLinkedInUrl('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    aria-label="Clear"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {selectedModel && (
@@ -186,6 +251,16 @@ export default function EnrichPage() {
         <UploadForm onConfirmed={(data) => { setConfirmed(data); setStage('confirm') }} />
 
         <SavedModels onSelect={(model) => setSelectedModel(model)} />
+
+        {showUpgradeCompany && (
+          <UpgradeModal
+            trigger="Company context"
+            requiredPlan="starter"
+            isOpen
+            onClose={() => setShowUpgradeCompany(false)}
+            currentPlan={(session?.user?.plan ?? 'free') as 'free' | 'starter' | 'pro' | 'enterprise'}
+          />
+        )}
       </div>
     </main>
   )
