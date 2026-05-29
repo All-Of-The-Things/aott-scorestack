@@ -162,6 +162,8 @@ model Organization {
   plan                  Plan     @default(free)
   managedCreditsBalance Int      @default(0) @map("managed_credits_balance")
   lsCustomerId          String?  @unique @map("ls_customer_id")
+  companyLinkedInUrl    String?  @map("company_linkedin_url")
+  companyData           Json?    @map("company_data")
   createdAt             DateTime @default(now()) @map("created_at")
 
   users            User[]

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import UploadForm, { type ConfirmedUpload } from '@/app/components/UploadForm'
 import EnrichmentConfirm from '../components/EnrichmentChoice'
@@ -17,6 +17,7 @@ export default function EnrichPage() {
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const [showRunLimit, setShowRunLimit] = useState(false)
   const [selectedModel, setSelectedModel] = useState<{ id: string; name: string } | null>(null)
+  const [storedCompanyUrl, setStoredCompanyUrl] = useState<string | null>(null)
   const [enrichmentName, setEnrichmentName] = useState(() => {
     const now = new Date()
     return `Data enrichment - ${now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
@@ -24,7 +25,17 @@ export default function EnrichPage() {
 
   const userEmail = status === 'authenticated' ? session.user.email : null
 
-  const handleSubmit = async (email: string) => {
+  useEffect(() => {
+    if (status !== 'authenticated') return
+    fetch('/api/org')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.companyLinkedInUrl) setStoredCompanyUrl(data.companyLinkedInUrl)
+      })
+      .catch(() => {})
+  }, [status])
+
+  const handleSubmit = async (email: string, companyLinkedInUrl: string | null) => {
     if (!confirmed) return
 
     try {
@@ -32,11 +43,12 @@ export default function EnrichPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          blob_url:          confirmed.blob_url,
-          linkedin_column:   confirmed.linkedin_column,
-          original_filename: confirmed.original_filename,
-          notify_email:      email,
-          name:              enrichmentName,
+          blob_url:             confirmed.blob_url,
+          linkedin_column:      confirmed.linkedin_column,
+          original_filename:    confirmed.original_filename,
+          notify_email:         email,
+          name:                 enrichmentName,
+          company_linkedin_url: companyLinkedInUrl ?? undefined,
           ...(selectedModel ? { model_id: selectedModel.id } : {}),
         }),
       })
@@ -110,6 +122,8 @@ export default function EnrichPage() {
               filename={confirmed.original_filename}
               initialEmail={userEmail ?? undefined}
               onSubmit={handleSubmit}
+              plan={(session?.user?.plan ?? 'free') as 'free' | 'starter' | 'pro' | 'enterprise'}
+              storedCompanyUrl={storedCompanyUrl}
             />
           </div>
         </div>

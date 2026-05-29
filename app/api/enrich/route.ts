@@ -5,17 +5,20 @@ import { auth } from '@/app/lib/auth'
 import { getPlanLimitsFor } from '@/app/lib/quota'
 import { RunStatus } from '@/app/generated/prisma'
 import { inngest } from '@/app/lib/inngest'
+import { fetchCompanyByUrl } from '@/app/lib/linkedapi'
+import { Prisma } from '@/app/generated/prisma'
 
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
 const EnrichBodySchema = z.object({
-  blob_url:          z.string().url(),
-  linkedin_column:   z.string().min(1),
-  original_filename: z.string().default('upload.csv'),
-  notify_email:      z.string().email(),
-  name:              z.string().optional(),
+  blob_url:              z.string().url(),
+  linkedin_column:       z.string().min(1),
+  original_filename:     z.string().default('upload.csv'),
+  notify_email:          z.string().email(),
+  name:                  z.string().optional(),
+  company_linkedin_url:  z.string().url().optional().nullable(),
 })
 
 // ---------------------------------------------------------------------------
@@ -35,7 +38,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: message }, { status: 400 })
   }
 
-  const { blob_url, linkedin_column, original_filename, notify_email, name } = body
+  const { blob_url, linkedin_column, original_filename, notify_email, name, company_linkedin_url } = body
 
   const session = await auth()
   const userId = session?.user?.id    ?? null
@@ -52,6 +55,20 @@ export async function POST(request: NextRequest) {
     if (runCount >= 5) {
       return Response.json({ error: 'run_limit_reached' }, { status: 402 })
     }
+  }
+
+  // Persist company URL on org and kick off enrichment (best-effort, non-blocking)
+  if (orgId && company_linkedin_url) {
+    void prisma.organization.update({
+      where: { id: orgId },
+      data: { companyLinkedInUrl: company_linkedin_url },
+    }).then(() =>
+      fetchCompanyByUrl(company_linkedin_url)
+        .then((data) => {
+          if (data) return prisma.organization.update({ where: { id: orgId }, data: { companyData: data as unknown as Prisma.InputJsonValue } })
+        })
+        .catch((err) => console.warn('[enrich] company enrichment failed, skipping:', err))
+    ).catch((err) => console.warn('[enrich] failed to save company URL:', err))
   }
 
   // Create run record

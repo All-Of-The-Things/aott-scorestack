@@ -41,7 +41,10 @@ export default async function ScorePage({ params }: ScorePageProps) {
   const { runId } = params
 
   const [run, session] = await Promise.all([
-    prisma.run.findUnique({ where: { id: runId } }),
+    prisma.run.findUnique({
+      where: { id: runId },
+      include: { org: { select: { companyLinkedInUrl: true, companyData: true } } },
+    }),
     auth(),
   ])
   if (!run) notFound()
@@ -276,6 +279,14 @@ export default async function ScorePage({ params }: ScorePageProps) {
                   ?? []
                 }
                 enrichmentPreview={enrichmentPreview}
+                senderCompany={
+                  run.org
+                    ? {
+                        url: run.org.companyLinkedInUrl ?? null,
+                        data: (run.org.companyData ?? null) as { name?: string | null; industry?: string | null; company_size?: string | null } | null,
+                      }
+                    : null
+                }
               />
             </section>
 

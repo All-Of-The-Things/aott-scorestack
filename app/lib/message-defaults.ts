@@ -1,6 +1,42 @@
 // The JSON output constraint is appended automatically in messages.ts — never show this to users.
 export const JSON_OUTPUT_SUFFIX = '\n\nReturn ONLY valid JSON: { "body": "<your message here>" }'
 
+interface CompanyContextData {
+  name?: string | null
+  industry?: string | null
+  company_size?: string | null
+}
+
+export function buildSenderContext(
+  url: string | null,
+  data: CompanyContextData | null,
+): string {
+  if (!url && !data) return ''
+
+  const parts: string[] = []
+
+  const name = data?.name
+  const industry = data?.industry
+  const size = data?.company_size
+
+  if (name) parts.push(name)
+  else if (url) {
+    const slug = url.split('/company/')[1]?.replace(/\/$/, '')
+    if (slug) parts.push(slug)
+  }
+
+  const details: string[] = []
+  if (industry) details.push(industry)
+  if (size) details.push(`${size} employees`)
+
+  let line = `Sender context: This outreach is on behalf of ${parts[0] ?? "the sender's company"}`
+  if (details.length) line += ` — ${details.join(', ')}`
+  if (url) line += `. LinkedIn: ${url}`
+  line += '.'
+
+  return line + '\n\n'
+}
+
 export const TONE_VARIANTS = ['Professional', 'Friendly', 'Direct', 'Consultative'] as const
 export type ToneVariant = typeof TONE_VARIANTS[number]
 
