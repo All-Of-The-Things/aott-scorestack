@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import prisma from '@/app/lib/prisma'
 import { EnrichmentStatus } from '@/app/generated/prisma'
-import { DEFAULT_SYSTEM_PROMPT, JSON_OUTPUT_SUFFIX } from '@/app/lib/message-defaults'
+import { DEFAULT_SYSTEM_PROMPT, JSON_OUTPUT_SUFFIX, buildSenderContext } from '@/app/lib/message-defaults'
 
 export { DEFAULT_SYSTEM_PROMPT }
 
@@ -10,7 +10,7 @@ export async function generateMessages(
   templateId: string,
   contactIds?: string[],
 ): Promise<{ generated: number; failed: number }> {
-  const [results, template] = await Promise.all([
+  const [results, template, run] = await Promise.all([
     prisma.runResult.findMany({
       where: {
         runId,
@@ -20,9 +20,18 @@ export async function generateMessages(
       orderBy: [{ totalScore: 'desc' }, { rowIndex: 'asc' }],
     }),
     prisma.messageTemplate.findUnique({ where: { id: templateId } }),
+    prisma.run.findUnique({
+      where: { id: runId },
+      select: { org: { select: { companyLinkedInUrl: true, companyData: true } } },
+    }),
   ])
 
   if (!template) throw new Error(`MessageTemplate ${templateId} not found`)
+
+  const senderContext = buildSenderContext(
+    run?.org?.companyLinkedInUrl ?? null,
+    (run?.org?.companyData ?? null) as { name?: string | null; industry?: string | null; company_size?: string | null } | null,
+  )
 
   if (process.env.ANTHROPIC_ENABLED !== 'true') {
     console.warn('Anthropic API calls are disabled by ANTHROPIC_ENABLED=false — returning mock messages')
@@ -52,8 +61,8 @@ export async function generateMessages(
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY environment variable is not set')
 
   const client = new Anthropic({ apiKey })
-  // Always append the JSON output constraint — users never write this themselves.
-  const systemPrompt = (template.systemPrompt || DEFAULT_SYSTEM_PROMPT) + JSON_OUTPUT_SUFFIX
+  // Prepend sender context (if set), then append the JSON output constraint.
+  const systemPrompt = senderContext + (template.systemPrompt || DEFAULT_SYSTEM_PROMPT) + JSON_OUTPUT_SUFFIX
 
   let generated = 0
   let failed = 0

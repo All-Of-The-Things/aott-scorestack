@@ -18,6 +18,7 @@ interface GeneratedMessage {
     linkedinUrl: string
     totalScore: number | null
     rowIndex: number
+    enrichedData: Record<string, unknown> | null
   }
 }
 
@@ -541,7 +542,9 @@ export default function MessagesTab({ runId, plan }: Props) {
                           rel="noopener noreferrer"
                           className="text-xs font-medium text-blue-600 hover:underline truncate max-w-[220px]"
                         >
-                          {msg.runResult.linkedinUrl.replace('https://www.linkedin.com/in/', '')}
+                          {(msg.runResult.enrichedData?.full_name as string | null | undefined) ||
+                           ([msg.runResult.enrichedData?.first_name, msg.runResult.enrichedData?.last_name].filter(Boolean).join(' ') || null) ||
+                           msg.runResult.linkedinUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, '').replace(/\/$/, '')}
                         </a>
                         {msg.runResult.totalScore !== null && (
                           <span className="shrink-0 text-[10px] text-gray-400">

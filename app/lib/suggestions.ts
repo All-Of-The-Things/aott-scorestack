@@ -7,6 +7,11 @@ export interface EnrichedSample {
   enriched_data: Record<string, unknown> | null
 }
 
+export interface SenderCompanyContext {
+  url?: string | null
+  data?: { name?: string | null; industry?: string | null; company_size?: string | null } | null
+}
+
 /**
  * Use the Anthropic API to suggest scoring criteria based on a sample of enriched contacts.
  *
@@ -19,7 +24,10 @@ export interface EnrichedSample {
  *
  * Requires ANTHROPIC_API_KEY env var.
  */
-export async function suggestCriteria(enrichedSample: EnrichedSample[]): Promise<Criterion[]> {
+export async function suggestCriteria(
+  enrichedSample: EnrichedSample[],
+  senderCompany?: SenderCompanyContext | null,
+): Promise<Criterion[]> {
   if (process.env.ANTHROPIC_ENABLED !== 'true') {
     console.warn('Anthropic API calls are disabled by ANTHROPIC_ENABLED=false')
     return suggestMock.criteria as Criterion[];
@@ -65,7 +73,18 @@ Guidelines:
 - Assign higher weights to the most discriminating criteria
 - Ensure weights sum to exactly 100`
 
-  const userMessage = `Here is a sample of enriched contacts from the user's list:\n\n${JSON.stringify(sampleSummary, null, 2)}\n\nSuggest scoring criteria for this contact list.`
+  const senderLine = (() => {
+    if (!senderCompany) return ''
+    const name = senderCompany.data?.name
+    const industry = senderCompany.data?.industry
+    const size = senderCompany.data?.company_size
+    const parts = [name, industry, size ? `${size} employees` : null].filter(Boolean).join(', ')
+    return parts
+      ? `\n\nContext: The outreach is sent on behalf of ${parts}. Suggest criteria that identify contacts most likely to be relevant to this company's business.`
+      : ''
+  })()
+
+  const userMessage = `Here is a sample of enriched contacts from the user's list:\n\n${JSON.stringify(sampleSummary, null, 2)}${senderLine}\n\nSuggest scoring criteria for this contact list.`
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',

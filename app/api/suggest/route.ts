@@ -11,8 +11,18 @@ export const maxDuration = 800 // 5 minutes in seconds (vercel.json caps at 300)
 // Validation
 // ---------------------------------------------------------------------------
 
+const SenderCompanySchema = z.object({
+  url: z.string().url().nullable().optional(),
+  data: z.object({
+    name: z.string().nullable().optional(),
+    industry: z.string().nullable().optional(),
+    company_size: z.string().nullable().optional(),
+  }).nullable().optional(),
+}).nullable().optional()
+
 const SuggestBodySchema = z.object({
   run_id: z.string().uuid(),
+  sender_company: SenderCompanySchema,
 })
 
 // ---------------------------------------------------------------------------
@@ -52,7 +62,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 })
   }
 
-  const { run_id } = body
+  const { run_id, sender_company } = body
 
   // Verify run exists and belongs to this org
   const run = await prisma.run.findUnique({ where: { id: run_id } })
@@ -90,7 +100,7 @@ export async function POST(request: NextRequest) {
   // Call Anthropic API
   let criteria: Awaited<ReturnType<typeof suggestCriteria>>
   try {
-    criteria = await suggestCriteria(enrichedSample)
+    criteria = await suggestCriteria(enrichedSample, sender_company ?? null)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'AI suggestion failed'
     console.error('[suggest] suggestCriteria failed:', message)

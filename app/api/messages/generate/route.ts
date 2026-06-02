@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     },
     include: {
       runResult: {
-        select: { id: true, linkedinUrl: true, totalScore: true, rowIndex: true },
+        select: { id: true, linkedinUrl: true, totalScore: true, rowIndex: true, enrichedData: true },
       },
     },
     orderBy: { runResult: { totalScore: 'desc' } },
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     },
     include: {
       runResult: {
-        select: { id: true, linkedinUrl: true, totalScore: true, rowIndex: true },
+        select: { id: true, linkedinUrl: true, totalScore: true, rowIndex: true, enrichedData: true },
       },
     },
     orderBy: { runResult: { totalScore: 'desc' } },

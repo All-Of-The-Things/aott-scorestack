@@ -18,6 +18,13 @@ export interface LinkedInProfile {
   location: string | null
 }
 
+export interface CompanyProfile {
+  name: string | null
+  industry: string | null
+  company_size: string | null
+  employee_count: string | null
+}
+
 export interface FetchProfileResult {
   status: 'success' | 'failed' | 'skipped'
   profile: LinkedInProfile | null
@@ -179,5 +186,33 @@ export async function fetchProfile(linkedinUrl: string): Promise<FetchProfileRes
       profile: null,
       error: err instanceof Error ? err.message : 'Unknown error',
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// fetchCompanyByUrl — enriches the sender's own company from a public
+// LinkedIn company page URL. Best-effort; returns null on any failure.
+// ---------------------------------------------------------------------------
+
+export async function fetchCompanyByUrl(companyUrl: string): Promise<CompanyProfile | null> {
+  if (process.env.LINKED_API_ENABLED !== 'true') return null
+
+  try {
+    const client = getClient()
+    const workflowId = await client.fetchCompany.execute({ companyUrl })
+    const result = await client.fetchCompany.result(workflowId)
+
+    if (result.errors.length > 0 || !result.data) return null
+
+    const co = result.data
+    return {
+      name: co.name || null,
+      industry: co.industry || null,
+      company_size: co.employeesCount != null ? bucketCompanySize(co.employeesCount) : null,
+      employee_count: co.employeesCount != null ? String(co.employeesCount) : null,
+    }
+  } catch (err) {
+    console.warn('[linkedapi] fetchCompanyByUrl failed for', companyUrl, err)
+    return null
   }
 }

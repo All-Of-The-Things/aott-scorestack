@@ -27,12 +27,18 @@ import { FIELD_ALLOWED_VALUES } from '@/app/lib/fields'
 // clicking "Suggest criteria for me" again. The user can still edit or replace.
 // ---------------------------------------------------------------------------
 
+interface SenderCompany {
+  url: string | null
+  data: { name?: string | null; industry?: string | null; company_size?: string | null } | null
+}
+
 interface CriteriaBuilderProps {
   runId: string
   availableFields: string[]
   initialCriteria?: Criterion[]
   plan: Plan
   enrichmentPreview?: Array<Record<string, string | null>>
+  senderCompany?: SenderCompany | null
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -64,7 +70,7 @@ function emptyCriterion(field: string): Criterion {
   }
 }
 
-export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [], plan, enrichmentPreview }: CriteriaBuilderProps) {
+export default function CriteriaBuilder({ runId, availableFields, initialCriteria = [], plan, enrichmentPreview, senderCompany }: CriteriaBuilderProps) {
   const router = useRouter()
   const [criteria, setCriteria] = useState<Criterion[]>(initialCriteria)
   // Raw text for each criterion's values input — decoupled from parsed match_values
@@ -89,7 +95,10 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
       const res = await fetch('/api/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_id: runId }),
+        body: JSON.stringify({
+          run_id: runId,
+          ...(senderCompany ? { sender_company: senderCompany } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -333,6 +342,32 @@ export default function CriteriaBuilder({ runId, availableFields, initialCriteri
         </div>
       </div>
     )}
+    {senderCompany && (senderCompany.url || senderCompany.data?.name) && (
+      <div className="mb-4 flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-700">
+        <svg className="w-3.5 h-3.5 shrink-0 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+        </svg>
+        <span>
+          Enriching for{' '}
+          <span className="font-medium">
+            {senderCompany.data?.name ?? senderCompany.url?.split('/company/')[1]?.replace(/\/$/, '') ?? 'your company'}
+          </span>
+          {senderCompany.data?.industry && <> · {senderCompany.data.industry}</>}
+          {senderCompany.data?.company_size && <> · {senderCompany.data.company_size} employees</>}
+        </span>
+        {senderCompany.url && (
+          <a
+            href={senderCompany.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto shrink-0 text-blue-500 hover:text-blue-700 underline underline-offset-2"
+          >
+            LinkedIn
+          </a>
+        )}
+      </div>
+    )}
+
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
