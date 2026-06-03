@@ -82,7 +82,7 @@ export default async function ScorePage({ params }: ScorePageProps) {
           <div className="max-w-5xl mx-auto px-4 pt-8 pb-16">
             <Breadcrumb items={[{ label: run.name ?? run.originalFilename, href: '/runs' }, { label: 'Define criteria' }]} />
             <WorkflowStepper currentStep={2} runId={runId} />
-            <EnrichingWait runId={runId} totalContacts={run.totalContacts} hasCompanyUrl={!!run.org?.companyLinkedInUrl} />
+            <EnrichingWait runId={runId} totalContacts={run.totalContacts} hasCompanyUrl={!!run.companyLinkedInUrl} />
           </div>
         </main>
       </>

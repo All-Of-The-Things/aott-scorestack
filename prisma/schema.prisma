@@ -395,6 +395,7 @@ model Run {
   status              RunStatus     @default(pending)
   blobUrl             String?       @map("blob_url")
   linkedinColumn      String?       @map("linkedin_column")
+  companyLinkedInUrl  String?       @map("company_linkedin_url")
   aiSuggestedCriteria Json?         @map("ai_suggested_criteria")
   scoringCriteria     Json?         @map("scoring_criteria")
   avgEnrichmentMs     Int?          @map("avg_enrichment_ms")
