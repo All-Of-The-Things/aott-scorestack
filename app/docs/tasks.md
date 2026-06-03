@@ -3,9 +3,9 @@
 **Phase:** EXECUTION  
 **Command:** BUILD::IMPLEMENT  
 **Source specs:** `/ai/output/specs/`
-**Last replanned:** SPEC::REFINE + PLAN::ARCHITECTURE + PLAN::TASKS 2026-05-11 — Phase 11 (Team Management) architecture; OrgInvite model (dedicated, not VerificationToken); header nav split from breadcrumb (breadcrumb now in page content); tasks.md audit (T-07, T-08 removed, T-10, T-17, T-25, T-26–T-29 marked complete)  
-**Total tasks:** 57 + Phase 11–13 tasks across 13 phases  
-**Current phase:** Phase 13 (Inngest Async Enrichment) — complete (2026-05-28)
+**Last replanned:** PLAN::TASKS 2026-06-03 — Phases 14–16 added (post-launch polish: footer, home page, enrichments list, email templates); T-57–T-66 created  
+**Total tasks:** 66 across 16 phases  
+**Current phase:** Phase 14–16 (Post-Launch Polish) — pending
 
 Phases must be executed in order. Each phase's output is a hard dependency for the next.
 
@@ -625,6 +625,108 @@ Phases must be executed in order. Each phase's output is a hard dependency for t
   - `confirm` stage renders `EnrichmentChoice` (now `EnrichmentConfirm`)
   - `submitted` stage renders `EnrichmentProgress` (now `EnrichmentSubmitted`)
   - On submit: call `POST /api/enrich`, handle 402 (UpgradeModal), navigate to `submitted` on success
+
+---
+
+## Phase 14 — Quick Wins: Footer, Home Page, Contact Limit Visibility ✅
+**Goal:** Polish the marketing page and upload flow with no new routes or dependencies.
+
+- [ ] **T-57** Update `AppFooter.tsx` — AOTT copyright
+  - File: `app/components/AppFooter.tsx`
+  - Replace right-side `© {year} ScoreStack` with `© {year} <a href="https://allofthethings.dev">AOTT</a>`
+  - Keep left-side "ScoreStack" wordmark unchanged
+
+- [ ] **T-58** Refresh home page features + enterprise banner
+  - File: `app/page.tsx`, new `app/components/EnterpriseInquiryModal.tsx`
+  - **FEATURES array:** add "Company context" card (Starter+ badge) after LinkedIn enrichment; remove "Custom implementations" card
+  - **EnterpriseInquiryModal:** extract enterprise inquiry form from `app/settings/billing/BillingCTAs.tsx` (email input, message textarea, submit → `POST /api/inquiries/enterprise`, success state) into a shared modal component; replace inline form in BillingCTAs with this component
+  - **EnterpriseBanner (client wrapper):** add between features grid and blue CTA — "Need something custom?" heading, subtext, "Talk to us" button opens EnterpriseInquiryModal; wrap in a `"use client"` component since `page.tsx` is async server component
+  - **Confirm with user before executing:** user noted "I'm forgetting something" about the home page — ask if they've recalled the missing item before touching this file
+
+- [ ] **T-59** Surface free-plan contact limit in upload flow
+  - File: `app/enrich/page.tsx`
+  - No logic change — 50-contact cap already enforced in `app/lib/inngest.ts` (`FREE_RUN_LIMIT = 50`)
+  - Add amber callout near file upload area, visible only when `session?.user?.plan === 'free'` (or plan is null)
+  - Text: "Free plan: only the first 50 contacts will be enriched. Upgrade to process your full list." (link → `/settings/billing`)
+
+---
+
+## Phase 15 — Enrichments List: Delete, Search, Pagination
+**Goal:** Make the runs list manageable as it grows — search, paged browsing, and safe deletion.
+
+- [ ] **T-60** Extract `PaginationBar` into a shared component
+  - Source: `app/components/ResultsTable.tsx` lines 228–283 (currently a private function)
+  - New file: `app/components/PaginationBar.tsx` — export the component
+  - Update `ResultsTable.tsx` to import from the new file
+  - Props: `{ page, pageSize, totalPages, start, total, onPageChange, onPageSizeChange }`
+  - Page size options: `[25, 50, 100]`
+
+- [ ] **T-61** Create `DELETE /api/runs/[runId]` endpoint
+  - New file: `app/api/runs/[runId]/route.ts`
+  - Follow pattern from `app/api/delivery/jobs/[jobId]/route.ts`
+  - Auth required; verify ownership (`orgId` or `userId` match on run)
+  - Reject with 409 if `run.status` is `enriching` or `scoring`
+  - `prisma.run.delete({ where: { id: runId } })` — cascade handles RunResult, UsageLog, EnrichmentNotification
+
+- [ ] **T-62** Create `RunsTable` client component + wire into runs page
+  - New file: `app/components/RunsTable.tsx` — Client Component
+  - `app/runs/page.tsx` stays Server Component; passes `runs` array as prop to `<RunsTable runs={runs} />`
+  - **Search:** text input at top; filters client-side on `name` and `originalFilename` (case-insensitive); resets page to 1 on change
+  - **Pagination:** use `<PaginationBar>` from T-60; default page size 25; show top and bottom when list > page size
+  - **Delete:** trash icon button per row (`text-gray-400 hover:text-red-500`); click shows inline confirmation band within the row ("Delete this run? — Confirm / Cancel"); on confirm → `DELETE /api/runs/[runId]` → remove from local state on success; show error in row on 409
+
+---
+
+## Phase 16 — Email Templates: React Email + Resend Dashboard
+**Goal:** Replace inline HTML strings in `notify.ts` with branded React Email components managed via Resend dashboard templates.
+
+- [ ] **T-63** Install React Email dependencies
+  ```
+  npm install @react-email/components @react-email/render
+  ```
+
+- [ ] **T-64** Create one React Email component per notification type
+  - New directory: `app/emails/`
+  - Files and props:
+    - `EnrichmentStarted.tsx` — `{ runName, contactCount, progressUrl }`
+    - `EnrichmentComplete.tsx` — `{ runName, enrichedCount, failedCount, totalContacts, resultsUrl }`
+    - `ByokCredentialError.tsx` — `{ errorReason, settingsUrl }`
+    - `OrgInvite.tsx` — `{ inviterName, orgName, inviteUrl }`
+    - `DeliveryComplete.tsx` — `{ sentCount, failedCount, resultsUrl }`
+  - Branding (apply consistently across all 5):
+    - Container: `max-width: 480px`, white background, `padding: 32px 24px`
+    - Primary button: `background: #2563eb`, white text, `border-radius: 8px`, `padding: 10px 20px`
+    - Heading: `#111827`, 18px, semibold
+    - Body text: `#6b7280`, 14px
+    - Info boxes: `#f9fafb` background, `#e5e7eb` border, 8px radius
+    - Footer: `#9ca3af`, 11px — "ScoreStack · Sent by allofthethings.dev"
+    - Font: `-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+
+- [ ] **T-65** Populate Resend dashboard templates (manual step — done by developer before deploy)
+  - Render each component to HTML: `render(<EnrichmentStarted runName="Test" ... />)`
+  - In Resend dashboard: create one template per notification; paste rendered HTML; replace dynamic values with Liquid syntax `{{ variable }}`
+  - Copy each template ID into Vercel env vars + local `.env`
+
+- [ ] **T-66** Update `notify.ts` to use Resend template IDs
+  - File: `app/lib/notify.ts`
+  - Add env vars to `.env.example`:
+    ```
+    RESEND_TEMPLATE_ENRICHMENT_STARTED=
+    RESEND_TEMPLATE_ENRICHMENT_COMPLETE=
+    RESEND_TEMPLATE_BYOK_CREDENTIAL_ERROR=
+    RESEND_TEMPLATE_ORG_INVITE=
+    RESEND_TEMPLATE_DELIVERY_COMPLETE=
+    ```
+  - Each notify function: switch from `html: '...'` to `template_id: process.env.RESEND_TEMPLATE_*` + `variables: { ... }`
+  - Guard: if template ID env var is missing, `console.warn` and return early (don't throw)
+  - Remove all inline HTML strings from `notify.ts`
+  - Updated subject lines:
+    - Started: `Your enrichment "{{ runName }}" has started`
+    - Complete: `"{{ runName }}" is ready — {{ enrichedCount }} contacts enriched`
+    - Credential error: `Action needed: LinkedIn credentials disconnected`
+    - Org invite: `{{ inviterName }} invited you to join {{ orgName }} on ScoreStack`
+    - Delivery complete: `Delivery complete — {{ sentCount }} messages sent`
+  - Keep enterprise inquiry email in `app/api/inquiries/enterprise/route.ts` as inline HTML (internal notification)
 
 ---
 
