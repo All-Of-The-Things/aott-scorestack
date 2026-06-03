@@ -106,5 +106,41 @@
     "rationale": "VerificationToken has no role field and is shared with NextAuth's magic-link flow. Encoding role in the identifier would require fragile prefix queries. A dedicated model is explicit, extensible, and separates concerns cleanly.",
     "outcome": "prisma/migrations/20260511000000_org_invite adds org_invites table. auth.ts signIn callback checks OrgInvite before org bootstrap. /api/org/invite creates invites and sends email. /settings/team page manages members and pending invites.",
     "files": ["prisma/schema.prisma", "app/lib/auth.ts", "app/api/org/invite/route.ts", "app/settings/team/page.tsx"]
+  },
+  {
+    "id": "D-013",
+    "date": "2026-06-03",
+    "title": "Enterprise inquiry form extracted into shared EnterpriseInquiryModal",
+    "decision": "The enterprise contact form (email + message + submit → POST /api/inquiries/enterprise) is extracted from BillingCTAs.tsx into a standalone EnterpriseInquiryModal component. BillingCTAs and the marketing home page both consume it.",
+    "rationale": "The home page needs an enterprise CTA that works for unauthenticated users — linking to /settings/billing fails without auth. Extracting the form avoids duplicating the submit logic and keeps the two surfaces in sync if copy or fields change.",
+    "outcome": "app/components/EnterpriseInquiryModal.tsx created. BillingCTAs.tsx replaces inline form with this component. Home page EnterpriseBanner (client wrapper) renders the modal without requiring auth.",
+    "files": ["app/components/EnterpriseInquiryModal.tsx", "app/settings/billing/BillingCTAs.tsx", "app/page.tsx"]
+  },
+  {
+    "id": "D-014",
+    "date": "2026-06-03",
+    "title": "Runs list: server fetch, client-side search/pagination/delete",
+    "decision": "app/runs/page.tsx remains a Server Component that fetches all runs and passes them to a new RunsTable Client Component. Search, pagination, and delete are handled client-side in RunsTable.",
+    "rationale": "URL-param server-side pagination would require the runs page to become a client route or add complexity with searchParams. Expected run volumes (tens to low hundreds per org) are small enough that loading all runs at once and slicing client-side matches the pattern already used by ResultsTable. This also keeps the delete interaction optimistic (row removed from local state immediately).",
+    "outcome": "app/components/RunsTable.tsx created as Client Component. app/runs/page.tsx passes runs array as prop. app/api/runs/[runId]/route.ts adds DELETE handler.",
+    "files": ["app/runs/page.tsx", "app/components/RunsTable.tsx", "app/api/runs/[runId]/route.ts"]
+  },
+  {
+    "id": "D-015",
+    "date": "2026-06-03",
+    "title": "PaginationBar extracted as shared component",
+    "decision": "The PaginationBar component (rows-per-page selector, prev/next, item range display) is extracted from ResultsTable.tsx into app/components/PaginationBar.tsx and shared by both ResultsTable and RunsTable.",
+    "rationale": "ResultsTable owns a private PaginationBar function. RunsTable needs the same UI. Duplicating it would create two diverging implementations. Extracting it establishes a single pagination UI contract for any tabular list in the app.",
+    "outcome": "app/components/PaginationBar.tsx created. ResultsTable.tsx imports from it. RunsTable.tsx imports from it.",
+    "files": ["app/components/PaginationBar.tsx", "app/components/ResultsTable.tsx", "app/components/RunsTable.tsx"]
+  },
+  {
+    "id": "D-016",
+    "date": "2026-06-03",
+    "title": "Email templates: React Email source files + Resend dashboard management",
+    "decision": "Each notification type gets a dedicated React Email component file in app/emails/. Templates are rendered to HTML and uploaded to Resend dashboard. notify.ts calls Resend with template_id + variables; no HTML strings in application code.",
+    "rationale": "Inline HTML strings in notify.ts are unmaintainable and impossible to preview. React Email gives type-safe, previewable component files as source of truth. Resend dashboard management means non-developers can edit copy and branding without a deploy. If a template_id env var is absent, the function warns and skips silently — email is non-critical and must not abort enrichment or delivery jobs.",
+    "outcome": "app/emails/ directory with 5 template files. notify.ts stripped of inline HTML; uses template_id + variables per call. Five RESEND_TEMPLATE_* env vars added to .env.example.",
+    "files": ["app/emails/EnrichmentStarted.tsx", "app/emails/EnrichmentComplete.tsx", "app/emails/ByokCredentialError.tsx", "app/emails/OrgInvite.tsx", "app/emails/DeliveryComplete.tsx", "app/lib/notify.ts", ".env.example"]
   }
 ]
